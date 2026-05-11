@@ -1,0 +1,12 @@
+venv/*
+*.zip
+GroundingDINO/
+NaviClues/images/
+*.out
+*.err
+__pycache__/
+dataset/
+output/
+commands.txt
+researcher_guide.md
+vlms/

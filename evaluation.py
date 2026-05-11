@@ -2,7 +2,7 @@ from tqdm import tqdm
 import json
 from utils import load_data, dump_jsonl, parse_json, haversine_distance,search_place_with_retry, PatchImages
 from utils import retrieve_similar_images
-from llm import LLaVA, Qwen, LLaVA_sft, Qwen_sft, CPM, CPM_sft
+from llm import LLaVA, Qwen, LLaVA_sft, Qwen_sft, CPM, CPM_sft, LLaVA_vllm, LLaVA_sft_vllm
 import os
 import argparse
 import numpy as np
@@ -21,21 +21,18 @@ def Geoscore(distance):
 
 class Evaluator:
 
-    def __init__(self, dataset_path, model, output_path,crop_box_treshold, crop_text_treshold, model_path, ckpt_dir):
+    def __init__(self, dataset_path, model, output_path, crop_box_treshold, crop_text_treshold, model_path, ckpt_dir, use_vllm=False, shard_id=0, num_shards=1):
         self.dataset_path = dataset_path
         self.model_type = model
         self.output_path = output_path
-        if model == 'qwen':
-            self.base_model = Qwen(model_path = model_path)  
-        elif model == 'llava':
-            self.base_model =LLaVA(model_path = model_path)
-        else:
-            self.base_model = CPM(model_path = model_path)
-        
+        self.base_model = None  # loaded lazily after stage 1 to avoid holding two 7B models in GPU memory simultaneously
         self.crop_box_treshold = crop_box_treshold
         self.crop_text_treshold = crop_text_treshold
         self.ckpt_dir = ckpt_dir
         self.model_path = model_path
+        self.use_vllm = use_vllm
+        self.shard_id = shard_id
+        self.num_shards = num_shards
 
 
 
@@ -43,9 +40,15 @@ class Evaluator:
         print("///////////The 1st stage: Reasoning///////////")
         # load dataset
         data = load_data(dataset_path+"/meta.jsonl") # it's dataset path because this is the first step
+        if self.num_shards > 1:
+            data = data[self.shard_id::self.num_shards]
+            print(f"Shard {self.shard_id}/{self.num_shards}: processing {len(data)} samples")
         # load model
+        # Note: the SFT model always uses Swift inference regardless of --use_vllm,
+        # because vLLM's LoRA+multimodal support for LLaVA-NeXT is not stable.
+        # vLLM speedup applies to the base model in stages 4-6.
         if self.model_type == "llava":
-            reasoning_model = LLaVA_sft(model_path = self.model_path, ckpt_dir = self.ckpt_dir)
+            reasoning_model = LLaVA_sft(model_path=self.model_path, ckpt_dir=self.ckpt_dir)
         elif self.model_type == "qwen":
             reasoning_model = Qwen_sft(model_path = self.model_path, ckpt_dir = self.ckpt_dir)
         else:
@@ -244,15 +247,33 @@ class Evaluator:
             yield row
 
 
+    def _load_base_model(self):
+        import gc
+        import torch
+        gc.collect()
+        torch.cuda.empty_cache()
+        if self.model_type == 'qwen':
+            self.base_model = Qwen(model_path=self.model_path)
+        elif self.model_type == 'llava':
+            if self.use_vllm:
+                self.base_model = LLaVA_vllm(model_path=self.model_path)
+            else:
+                self.base_model = LLaVA(model_path=self.model_path)
+        else:
+            self.base_model = CPM(model_path=self.model_path)
+
     def forward(self):
-        # Stage 1:
+        # Stage 1 (uses reasoning_model internally, not self.base_model):
         o_file = f"{output_path}/results_s1.jsonl"
         dump_jsonl(self.getReasoning(), o_file)
+
+        # Load base model now that reasoning_model has been freed
+        self._load_base_model()
 
         # Stage 2:
         o_file = f"{output_path}/results_s2.jsonl"
         dump_jsonl(self.getGrounding(), o_file)
-        
+
         # Stage 3:
         o_file = f"{output_path}/results_s3.jsonl"
         dump_jsonl(self.getRAG(), o_file)
@@ -260,7 +281,7 @@ class Evaluator:
         # Stage 4:
         o_file = f"{output_path}/results_s4.jsonl"
         dump_jsonl(self.getComment(), o_file)
-    
+
         # Stage 5:
         o_file = f"{output_path}/results_s5.jsonl"
         dump_jsonl(self.getOSM(), o_file)
@@ -328,6 +349,9 @@ def parse_args():
     parser.add_argument('--crop_text_treshold', type=float, default = 0.55)
     parser.add_argument('--model_path', type=str, default = 'vlms/qwen/Qwen2-VL-7B-Instruct')
     parser.add_argument('--ckpt_dir', type=str, default = 'vlms/qwen/checkpoint-534')
+    parser.add_argument('--use_vllm', action='store_true', help="Use vLLM for faster LLaVA inference")
+    parser.add_argument('--num_shards', type=int, default=1, help="Total number of parallel shards")
+    parser.add_argument('--shard_id', type=int, default=0, help="Which shard this job processes (0-indexed)")
     return parser.parse_args()
 
 if __name__ == "__main__":
@@ -341,11 +365,14 @@ if __name__ == "__main__":
     crop_text_treshold = args.crop_text_treshold
     model_path = args.model_path
     ckpt_dir = args.ckpt_dir
+    use_vllm = args.use_vllm
+    num_shards = args.num_shards
+    shard_id = args.shard_id
 
     if not os.path.exists(output_path):
         os.makedirs(output_path)
 
-    evaluator = Evaluator(dataset_path, model, output_path, crop_box_treshold, crop_text_treshold, model_path, ckpt_dir)
+    evaluator = Evaluator(dataset_path, model, output_path, crop_box_treshold, crop_text_treshold, model_path, ckpt_dir, use_vllm=use_vllm, shard_id=shard_id, num_shards=num_shards)
     evaluator.forward()
         
     evaluator.guess_forward()
