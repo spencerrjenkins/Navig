@@ -72,7 +72,7 @@ Navig/
 ├── script.sh              SLURM array job — full pipeline, 4 shards
 ├── script_guess_only.sh   SLURM array job — stage-6 swap experiment, 4 shards
 │
-├── environment.txt        Conda environment spec (Python 3.10, CUDA 11.8)
+├── environment.txt        Full package list snapshot (reference only — use install_env.sh)
 ├── install_env.sh         Environment installation helper
 │
 ├── dataset/               Evaluation datasets (see Data preparation)
@@ -110,33 +110,37 @@ Navig/
 
 ## Environment setup
 
-**Requirements:** Python 3.10, CUDA 11.8, conda
+**Requirements:** Python 3.10, CUDA 12.1, conda, GCC 11
 
 ```bash
-# Create environment from spec
-conda create --name navig --file environment.txt
+# 1. Create an empty conda environment
+conda create -n navig python=3.10 -y
 conda activate navig
 
-# Load the correct CUDA module (on the Nexus cluster)
+# 2. Install all packages (PyTorch, ms-Swift, CLIP, FAISS, vLLM, GroundingDINO)
+bash install_env.sh
+```
+
+`install_env.sh` handles everything in order:
+- `torch==2.4.0+cu121` + matching `torchvision` and `torchaudio`
+- `ms-swift==2.5.0.post1` — model loading and LoRA adapters
+- `transformers==4.45.2`, `peft`, `accelerate`
+- OpenAI CLIP (from GitHub source)
+- `faiss-gpu` (falls back to `faiss-cpu` if the conda channel is unavailable)
+- `vllm==0.5.5` — batch inference acceleration for stages 4–6
+- GroundingDINO built from the local `GroundingDINO/` source (requires GCC 11 and CUDA 12.1)
+
+The script targets the **RTX A6000 (SM 8.6)** GPU architecture. If you are on a different GPU, edit the `TORCH_CUDA_ARCH_LIST` line in `install_env.sh` before running.
+
+Load the correct modules before each session (or put in your `~/.bashrc`):
+
+```bash
 module unload cuda
 module load cuda/12.1.1
 export CUDA_HOME=/opt/common/cuda/cuda-12.1.1
 ```
 
-Key packages (already in `environment.txt`):
-- `torch==2.2.2+cu118`, `torchvision`, `torchaudio`
-- `ms-swift==2.5.0.post1` — model loading and LoRA adapters
-- `transformers==4.45.2`
-- `faiss-gpu` — CLIP retrieval index
-- `groundingdino==0.1.0` — object detection
-- `openai==1.46.0` — used only by `rouge.py`
-
-**GroundingDINO** must be cloned into the project root and built:
-
-```bash
-git clone https://github.com/IDEA-Research/GroundingDINO.git
-cd GroundingDINO && pip install -e . && cd ..
-```
+**Note:** `environment.txt` is a snapshot of the full package list for reference, but it is not the installation method — use `install_env.sh`.
 
 ---
 
