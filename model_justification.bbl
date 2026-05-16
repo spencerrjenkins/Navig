@@ -1,0 +1,154 @@
+\begin{thebibliography}{20}
+\providecommand{\natexlab}[1]{#1}
+\providecommand{\url}[1]{\texttt{#1}}
+\expandafter\ifx\csname urlstyle\endcsname\relax
+  \providecommand{\doi}[1]{doi: #1}\else
+  \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[Almazrouei et~al.(2023)Almazrouei, Alobeidli, Alshamsi, Cappelli,
+  Cojocaru, Debbah, et~al.]{Almazrouei2023Falcon}
+Ebtesam Almazrouei, Hamza Alobeidli, Abdulaziz Alshamsi, Alessandro Cappelli,
+  Ruxandra Cojocaru, M{\'e}rouane Debbah, et~al.
+\newblock The {Falcon} series of open language models.
+\newblock \emph{arXiv preprint arXiv:2311.16867}, 2023.
+
+\bibitem[Chen et~al.(2024)Chen, Wu, Wang, Su, Chen, Xing, Zheng, Zhang, Zhu,
+  Lu, et~al.]{Chen2024InternVL}
+Zhe Chen, Jiannan Wu, Wenhai Wang, Weijie Su, Guo Chen, Sen Xing, Muyan Zheng,
+  Qibin Zhang, Xingcheng Zhu, Lewei Lu, et~al.
+\newblock {InternVL}: Scaling up vision foundation models and aligning for
+  generic visual-linguistic tasks.
+\newblock In \emph{{IEEE/CVF} Conference on Computer Vision and Pattern
+  Recognition ({CVPR})}, pages 24185--24198, 2024.
+
+\bibitem[Chiang et~al.(2023)Chiang, Li, Lin, Sheng, Wu, Zhang, Zheng, Zhuang,
+  Zhuang, Gonzalez, Stoica, and Xing]{Chiang2023Vicuna}
+Wei-Lin Chiang, Zhuohan Li, Zi~Lin, Ying Sheng, Zhanghao Wu, Hao Zhang, Lianmin
+  Zheng, Siyuan Zhuang, Yonghao Zhuang, Joseph~E. Gonzalez, Ion Stoica, and
+  Eric~P. Xing.
+\newblock Vicuna: An open-source chatbot impressing {GPT-4} with 90\% {ChatGPT}
+  quality.
+\newblock \url{https://lmsys.org/blog/2023-03-30-vicuna/}, 2023.
+
+\bibitem[Hays and Efros(2008)]{Hays2008IM2GPS}
+James Hays and Alexei~A. Efros.
+\newblock {IM2GPS}: Estimating geographic information from a single image.
+\newblock In \emph{{IEEE/CVF} Conference on Computer Vision and Pattern
+  Recognition ({CVPR})}, pages 1--8, 2008.
+
+\bibitem[Hu et~al.(2022)Hu, Shen, Wallis, Allen-Zhu, Li, Wang, Wang, and
+  Chen]{Hu2022LoRA}
+Edward~J. Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean
+  Wang, Lu~Wang, and Weizhu Chen.
+\newblock {LoRA}: Low-rank adaptation of large language models.
+\newblock In \emph{International Conference on Learning Representations
+  ({ICLR})}, 2022.
+
+\bibitem[Johnson et~al.(2021)Johnson, Douze, and J{\'e}gou]{Johnson2021FAISS}
+Jeff Johnson, Matthijs Douze, and Herv{\'e} J{\'e}gou.
+\newblock Billion-scale similarity search with {GPU}s.
+\newblock \emph{{IEEE} Transactions on Big Data}, 7\penalty0 (3):\penalty0
+  535--547, 2021.
+
+\bibitem[Kirillov et~al.(2023)Kirillov, Mintun, Ravi, Mao, Rolland, Gustafson,
+  Rearick, Lowe, Berg, Belongie, Girshick, and Doll{\'a}r]{Kirillov2023SAM}
+Alexander Kirillov, Eric Mintun, Nikhila Ravi, Hanzi Mao, Chloe Rolland, Laura
+  Gustafson, Tete Rearick, David Lowe, Alexander~C. Berg, Serge Belongie, Ross
+  Girshick, and Piotr Doll{\'a}r.
+\newblock Segment anything.
+\newblock In \emph{{IEEE/CVF} International Conference on Computer Vision
+  ({ICCV})}, 2023.
+
+\bibitem[Kwon et~al.(2023)Kwon, Li, Zhuang, Sheng, Zheng, Yu, Gonzalez, Zhang,
+  and Stoica]{Kwon2023vLLM}
+Woosuk Kwon, Zhuohan Li, Siyuan Zhuang, Ying Sheng, Lianmin Zheng, Cody~Hao Yu,
+  Joseph~E. Gonzalez, Hao Zhang, and Ion Stoica.
+\newblock Efficient memory management for large language model serving with
+  {PagedAttention}.
+\newblock In \emph{Proceedings of the {ACM} {SIGOPS} 29th Symposium on
+  Operating Systems Principles ({SOSP})}, 2023.
+
+\bibitem[Liu et~al.(2024{\natexlab{a}})Liu, Li, Li, and Lee]{Liu2024LLaVA15}
+Haotian Liu, Chunyuan Li, Yuheng Li, and Yong~Jae Lee.
+\newblock Improved baselines with visual instruction tuning.
+\newblock In \emph{{IEEE/CVF} Conference on Computer Vision and Pattern
+  Recognition ({CVPR})}, pages 26286--26296, 2024{\natexlab{a}}.
+
+\bibitem[Liu et~al.(2024{\natexlab{b}})Liu, Li, Li, and Lee]{Liu2024LLaVANeXT}
+Haotian Liu, Chunyuan Li, Yuheng Li, and Yong~Jae Lee.
+\newblock {LLaVA-NeXT}: Improved reasoning, {OCR}, and world knowledge.
+\newblock \url{https://llava-vl.github.io/blog/2024-01-30-llava-next/},
+  2024{\natexlab{b}}.
+
+\bibitem[Liu et~al.(2024{\natexlab{c}})Liu, Zeng, Ren, Li, Zhang, Yang, Li,
+  Yang, Su, Zhu, and Zhang]{Liu2023GroundingDINO}
+Shilong Liu, Zhaoyang Zeng, Tianhe Ren, Feng Li, Hao Zhang, Jie Yang, Chunyuan
+  Li, Jianwei Yang, Hang Su, Jun Zhu, and Lei Zhang.
+\newblock {Grounding DINO}: Marrying {DINO} with grounded pre-training for
+  open-set object detection.
+\newblock In \emph{European Conference on Computer Vision ({ECCV})},
+  2024{\natexlab{c}}.
+
+\bibitem[Lu et~al.(2024)Lu, Liu, Zhang, Wang, Dong, Liu, Sun, Ren, Li, Yang,
+  Sun, Deng, Xu, Xie, and Ruan]{Lu2024DeepSeekVL}
+Haoyu Lu, Wen Liu, Bo~Zhang, Bingxuan Wang, Kai Dong, Bo~Liu, Jingxiang Sun,
+  Tongzheng Ren, Zhuoshu Li, Hao Yang, Yaofeng Sun, Chengqi Deng, Hanwei Xu,
+  Zhenda Xie, and Chong Ruan.
+\newblock {DeepSeek-VL}: Towards real-world vision-language understanding.
+\newblock \emph{arXiv preprint arXiv:2403.05525}, 2024.
+
+\bibitem[{Meta AI}(2024)]{Meta2024Llama3}
+{Meta AI}.
+\newblock The {Llama} 3 herd of models.
+\newblock \emph{arXiv preprint arXiv:2407.21783}, 2024.
+
+\bibitem[{ModelScope Community}(2024)]{msSwift2024}
+{ModelScope Community}.
+\newblock {ms-Swift}: A scalable lightweight infrastructure for fine-tuning and
+  inference of large language models.
+\newblock \url{https://github.com/modelscope/ms-swift}, 2024.
+
+\bibitem[Radford et~al.(2021)Radford, Kim, Hallacy, Ramesh, Goh, Agarwal,
+  Sastry, Askell, Mishkin, Clark, Krueger, and Sutskever]{Radford2021CLIP}
+Alec Radford, Jong~Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh,
+  Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark,
+  Gretchen Krueger, and Ilya Sutskever.
+\newblock Learning transferable visual models from natural language
+  supervision.
+\newblock In \emph{Proceedings of the 38th International Conference on Machine
+  Learning ({ICML})}, pages 8748--8763, 2021.
+
+\bibitem[Vo et~al.(2017)Vo, Jacobs, and Hays]{Vo2017IM2GPS3K}
+Nam Vo, Nathan Jacobs, and James Hays.
+\newblock Revisiting {IM2GPS} in the deep learning era.
+\newblock In \emph{{IEEE} International Conference on Computer Vision
+  ({ICCV})}, 2017.
+
+\bibitem[Wang et~al.(2024)Wang, Bai, Tan, Wang, Fan, Bai, Chen, Liu, Wang, Ge,
+  Fan, Dang, et~al.]{Wang2024Qwen2VL}
+Peng Wang, Shuai Bai, Sinan Tan, Shijie Wang, Zhihao Fan, Jinze Bai, Keqin
+  Chen, Xuejing Liu, Jialin Wang, Wenbin Ge, Yang Fan, Kai Dang, et~al.
+\newblock {Qwen2-VL}: Enhancing vision-language model's perception of the world
+  at any resolution.
+\newblock \emph{arXiv preprint arXiv:2409.12191}, 2024.
+
+\bibitem[Yao et~al.(2024)Yao, Yu, Zhang, Wang, Cui, Zhu, Cai, Li, Zhao, He,
+  et~al.]{Yao2024MiniCPMV}
+Yuan Yao, Tianyu Yu, Ao~Zhang, Chongyi Wang, Junbo Cui, Hongji Zhu, Tianchi
+  Cai, Haoyu Li, Weilin Zhao, Zhihui He, et~al.
+\newblock {MiniCPM-V}: A {GPT-4V} level {MLLM} on your phone.
+\newblock \emph{arXiv preprint arXiv:2408.01800}, 2024.
+
+\bibitem[Yu et~al.(2025)]{Yu2025NAVIG}
+Zheyuan Yu et~al.
+\newblock {NAVIG}: Natural language-guided analysis with vision language models
+  for image geo-localization.
+\newblock \emph{arXiv preprint arXiv:2502.14638}, 2025.
+
+\bibitem[Zhai et~al.(2023)Zhai, Mustafa, Kolesnikov, and Beyer]{Zhai2023SigLIP}
+Xiaohua Zhai, Basil Mustafa, Alexander Kolesnikov, and Lucas Beyer.
+\newblock Sigmoid loss for language image pre-training.
+\newblock In \emph{{IEEE/CVF} International Conference on Computer Vision
+  ({ICCV})}, 2023.
+
+\end{thebibliography}

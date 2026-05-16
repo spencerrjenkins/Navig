@@ -31,10 +31,13 @@ Typical workflow
 Supported --model choices
 --------------------------
   llava          LLaVA-1.6-Vicuna-7B (baseline, matches existing pipeline)
-  qwen           Qwen2-VL-7B-Instruct
-  cpm            MiniCPM-V-2.6
+  qwen           Qwen2-VL-7B-Instruct (also works with Qwen2.5-VL weights)
+  cpm            MiniCPM-V-2.6 (base, no fine-tuning)
+  cpm_sft        MiniCPM-V-2.6 with NAVIG LoRA adapter (requires --ckpt_dir)
   llama32vision  Llama-3.2-11B-Vision-Instruct  [recommended for experiment]
   internvl2      InternVL2-8B
+  deepseek       DeepSeek-VL-7B-Chat
+  falcon         Falcon-11B-VLM
 """
 
 import argparse
@@ -52,15 +55,22 @@ def Geoscore(distance):
     return 5000 * np.exp(-distance / 1492.7)
 
 
-def load_model(model_name: str, model_path: str):
-    from llm import LLaVA, Qwen, CPM, Llama32Vision, InternVL2
-    dispatch = {
-        'llava':         lambda: LLaVA(model_path=model_path),
-        'qwen':          lambda: Qwen(model_path=model_path),
-        'cpm':           lambda: CPM(model_path=model_path),
-        'llama32vision': lambda: Llama32Vision(model_path=model_path),
-        'internvl2':     lambda: InternVL2(model_path=model_path),
-    }
+def load_model(model_name: str, model_path: str, ckpt_dir: str = None):
+    from llm import LLaVA, Qwen, CPM, CPM_sft, Llama32Vision, InternVL2, DeepSeekVL, FalconVLM
+    if model_name == 'cpm_sft':
+        if not ckpt_dir:
+            raise ValueError("--ckpt_dir is required for cpm_sft")
+        dispatch = {'cpm_sft': lambda: CPM_sft(model_path=model_path, ckpt_dir=ckpt_dir)}
+    else:
+        dispatch = {
+            'llava':         lambda: LLaVA(model_path=model_path),
+            'qwen':          lambda: Qwen(model_path=model_path),
+            'cpm':           lambda: CPM(model_path=model_path),
+            'llama32vision': lambda: Llama32Vision(model_path=model_path),
+            'internvl2':     lambda: InternVL2(model_path=model_path),
+            'deepseek':      lambda: DeepSeekVL(model_path=model_path),
+            'falcon':        lambda: FalconVLM(model_path=model_path),
+        }
     if model_name not in dispatch:
         raise ValueError(f"Unknown model '{model_name}'. Choices: {list(dispatch)}")
     print(f"Loading model: {model_name} from {model_path}")
@@ -177,9 +187,12 @@ def parse_args():
     p.add_argument('--dataset_path', type=str, required=True,
                    help='Dataset root containing images/ subdirectory')
     p.add_argument('--model', type=str, default='llama32vision',
-                   choices=['llava', 'qwen', 'cpm', 'llama32vision', 'internvl2'])
+                   choices=['llava', 'qwen', 'cpm', 'cpm_sft', 'llama32vision',
+                            'internvl2', 'deepseek', 'falcon'])
     p.add_argument('--model_path', type=str, required=True,
                    help='Local path or HuggingFace model ID for the guesser model')
+    p.add_argument('--ckpt_dir', type=str, default=None,
+                   help='LoRA checkpoint directory (required for cpm_sft)')
     p.add_argument('--output', type=str, required=True,
                    help='Output JSONL path for stage-6 results')
     p.add_argument('--num_shards', type=int, default=1)
@@ -195,7 +208,7 @@ if __name__ == '__main__':
     os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
 
     if not args.score_only:
-        model = load_model(args.model, args.model_path)
+        model = load_model(args.model, args.model_path, ckpt_dir=args.ckpt_dir)
         run_guess(args.s5_path, args.dataset_path, model,
                   args.output, args.shard_id, args.num_shards)
 

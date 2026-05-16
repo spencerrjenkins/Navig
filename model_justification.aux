@@ -1,0 +1,169 @@
+\relax 
+\providecommand\hyper@newdestlabel[2]{}
+\providecommand\HyperFirstAtBeginDocument{\AtBeginDocument}
+\HyperFirstAtBeginDocument{\ifx\hyper@anchor\@undefined
+\global\let\oldcontentsline\contentsline
+\gdef\contentsline#1#2#3#4{\oldcontentsline{#1}{#2}{#3}}
+\global\let\oldnewlabel\newlabel
+\gdef\newlabel#1#2{\newlabelxx{#1}#2}
+\gdef\newlabelxx#1#2#3#4#5#6{\oldnewlabel{#1}{{#2}{#3}}}
+\AtEndDocument{\ifx\hyper@anchor\@undefined
+\let\contentsline\oldcontentsline
+\let\newlabel\oldnewlabel
+\fi}
+\fi}
+\global\let\hyper@last\relax 
+\gdef\HyperFirstAtBeginDocument#1{#1}
+\providecommand\HyField@AuxAddToFields[1]{}
+\providecommand\HyField@AuxAddToCoFields[2]{}
+\citation{Yu2025NAVIG}
+\citation{Liu2023GroundingDINO}
+\citation{Radford2021CLIP}
+\citation{Johnson2021FAISS}
+\@writefile{toc}{\contentsline {section}{\numberline {1}Overview}{2}{section.1}}
+\@writefile{toc}{\contentsline {paragraph}{Why this evaluation extends the original paper.}{2}{section*.2}}
+\citation{Hu2022LoRA}
+\citation{Vo2017IM2GPS3K}
+\citation{Hays2008IM2GPS}
+\@writefile{toc}{\contentsline {section}{\numberline {2}Evaluation Dataset: im2gps3k}{3}{section.2}}
+\newlabel{sec:im2gps3k}{{2}{3}{Evaluation Dataset: im2gps3k}{section.2}{}}
+\@writefile{toc}{\contentsline {paragraph}{Geographic distribution.}{3}{section*.4}}
+\@writefile{toc}{\contentsline {paragraph}{Image content and difficulty.}{3}{section*.6}}
+\citation{Yu2025NAVIG}
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces Geographic distribution of the 2{,}997-image im2gps3k benchmark by broad continental region. Europe and North America together account for two-thirds of the dataset, reflecting the geographic bias of Flickr photographers in the collection window.\relax }}{4}{figure.caption.5}}
+\newlabel{fig:dataset_geo}{{1}{4}{Geographic distribution of the 2{,}997-image im2gps3k benchmark by broad continental region. Europe and North America together account for two-thirds of the dataset, reflecting the geographic bias of Flickr photographers in the collection window.\relax }{figure.caption.5}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces Representative im2gps3k predictions from the LLaVA-1.6 full pipeline. \textbf  {Top row (successes):} Landmark-rich images are localised to within metres. Left: Eiffel Tower (Paris), 0.01\tmspace  +\thinmuskip {.1667em}km error. Centre: National Gallery, Trafalgar Square (London), 0.10\tmspace  +\thinmuskip {.1667em}km error. Right: The Sherlock Holmes pub, Northumberland Street (London), 0.10\tmspace  +\thinmuskip {.1667em}km error---the pub name and street sign are both legible, making it trivially identifiable. \textbf  {Bottom row (failures):} Images providing little or no geographic signal produce antipodal errors exceeding 19{,}000\tmspace  +\thinmuskip {.1667em}km. Left: A commercial parking area in A\nobreakspace  {}Coru\~{n}a, Spain; English-language signage and temperate greenery caused the model to predict Christchurch, New Zealand (19{,}931\tmspace  +\thinmuskip {.1667em}km error). Centre: A gharial photographed in Bangkok, Thailand; the model associated the species with Cuba (19{,}763\tmspace  +\thinmuskip {.1667em}km error). Right: The Icelandic highland near M\'{y}rdalsjokull; the barren volcanic terrain and distant glacier were interpreted as Antarctica (19{,}226\tmspace  +\thinmuskip {.1667em}km error). The failure cases are categorically different from the successes---they contain almost no unambiguous geographic signal---and represent a systematic, not random, source of error.\relax }}{5}{figure.caption.7}}
+\newlabel{fig:dataset_examples}{{2}{5}{Representative im2gps3k predictions from the LLaVA-1.6 full pipeline. \textbf {Top row (successes):} Landmark-rich images are localised to within metres. Left: Eiffel Tower (Paris), 0.01\,km error. Centre: National Gallery, Trafalgar Square (London), 0.10\,km error. Right: The Sherlock Holmes pub, Northumberland Street (London), 0.10\,km error---the pub name and street sign are both legible, making it trivially identifiable. \textbf {Bottom row (failures):} Images providing little or no geographic signal produce antipodal errors exceeding 19{,}000\,km. Left: A commercial parking area in A~Coru\~{n}a, Spain; English-language signage and temperate greenery caused the model to predict Christchurch, New Zealand (19{,}931\,km error). Centre: A gharial photographed in Bangkok, Thailand; the model associated the species with Cuba (19{,}763\,km error). Right: The Icelandic highland near M\'{y}rdalsjokull; the barren volcanic terrain and distant glacier were interpreted as Antarctica (19{,}226\,km error). The failure cases are categorically different from the successes---they contain almost no unambiguous geographic signal---and represent a systematic, not random, source of error.\relax }{figure.caption.7}{}}
+\@writefile{toc}{\contentsline {paragraph}{Suitability for NAVIG evaluation.}{6}{section*.8}}
+\@writefile{toc}{\contentsline {section}{\numberline {3}Training Dataset: NaviClues}{6}{section.3}}
+\newlabel{sec:navclues}{{3}{6}{Training Dataset: NaviClues}{section.3}{}}
+\newlabel{eq:geoscore}{{1}{6}{Training Dataset: NaviClues}{equation.3.1}{}}
+\@writefile{toc}{\contentsline {paragraph}{NaviClues vs.\ im2gps3k: domain mismatch.}{6}{section*.9}}
+\citation{msSwift2024}
+\citation{Hu2022LoRA}
+\citation{Kwon2023vLLM}
+\citation{Liu2023GroundingDINO}
+\citation{Radford2021CLIP}
+\citation{Johnson2021FAISS}
+\citation{Liu2024LLaVANeXT}
+\citation{Liu2024LLaVA15}
+\citation{Radford2021CLIP}
+\citation{Chiang2023Vicuna}
+\@writefile{toc}{\contentsline {section}{\numberline {4}Fine-Tuning and Inference Infrastructure}{7}{section.4}}
+\newlabel{sec:infra}{{4}{7}{Fine-Tuning and Inference Infrastructure}{section.4}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {5}Primary Pipeline Models (with Supervised Fine-Tuning)}{7}{section.5}}
+\newlabel{sec:primary}{{5}{7}{Primary Pipeline Models (with Supervised Fine-Tuning)}{section.5}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}LLaVA-1.6-Vicuna-7B (\texttt  {LLaVA} / \texttt  {LLaVA\_sft})}{7}{subsection.5.1}}
+\citation{Yu2025NAVIG}
+\citation{Wang2024Qwen2VL}
+\citation{Wang2024Qwen2VL}
+\citation{Yao2024MiniCPMV}
+\citation{Zhai2023SigLIP}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Qwen2-VL-7B-Instruct (\texttt  {Qwen} / \texttt  {Qwen\_sft})}{8}{subsection.5.2}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.3}MiniCPM-V-2.6 (\texttt  {CPM} / \texttt  {CPM\_sft})}{8}{subsection.5.3}}
+\citation{Zhai2023SigLIP}
+\citation{Meta2024Llama3}
+\citation{Meta2024Llama3}
+\@writefile{toc}{\contentsline {section}{\numberline {6}Full-Pipeline Comparison Models (Zero-Shot, No SFT)}{9}{section.6}}
+\newlabel{sec:cmp}{{6}{9}{Full-Pipeline Comparison Models (Zero-Shot, No SFT)}{section.6}{}}
+\@writefile{toc}{\contentsline {paragraph}{Relationship to the Stage-6 swap experiment.}{9}{section*.10}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.1}Llama-3.2-11B-Vision-Instruct (\texttt  {Llama32Vision})}{9}{subsection.6.1}}
+\citation{Lu2024DeepSeekVL}
+\citation{Zhai2023SigLIP}
+\citation{Kirillov2023SAM}
+\citation{Lu2024DeepSeekVL}
+\citation{Liu2024LLaVANeXT}
+\citation{Almazrouei2023Falcon}
+\citation{Almazrouei2023Falcon}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.2}DeepSeek-VL-7B-Chat (\texttt  {DeepSeekVL})}{10}{subsection.6.2}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.3}Falcon-11B-VLM (\texttt  {FalconVLM})}{10}{subsection.6.3}}
+\citation{Chen2024InternVL}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.4}InternVL2-8B (\texttt  {InternVL2}) --- Planned}{11}{subsection.6.4}}
+\newlabel{sec:internvl2}{{6.4}{11}{InternVL2-8B (\texttt {InternVL2}) --- Planned}{subsection.6.4}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {7}Stage-6 Swap Experiment}{11}{section.7}}
+\newlabel{sec:swap}{{7}{11}{Stage-6 Swap Experiment}{section.7}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {8}Architectural Comparison}{12}{section.8}}
+\@writefile{toc}{\contentsline {section}{\numberline {9}Summary and Research Gaps}{12}{section.9}}
+\newlabel{sec:model_summary}{{9}{12}{Summary and Research Gaps}{section.9}{}}
+\citation{Vo2017IM2GPS3K}
+\@writefile{toc}{\contentsline {section}{\numberline {10}Experimental Results and Analysis}{13}{section.10}}
+\newlabel{sec:results}{{10}{13}{Experimental Results and Analysis}{section.10}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {10.1}Overall Pipeline Performance}{13}{subsection.10.1}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {10.2}Distance Accuracy Across Thresholds}{13}{subsection.10.2}}
+\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces Headline GeoScore (all samples, including parse failures scored as 0) and GeoScore excluding parse failures, for all seven conditions. Qwen2-VL and Falcon-11B are omitted from the exclusion bar because no valid predictions exist.\relax }}{14}{figure.caption.13}}
+\newlabel{fig:geoscore}{{3}{14}{Headline GeoScore (all samples, including parse failures scored as 0) and GeoScore excluding parse failures, for all seven conditions. Qwen2-VL and Falcon-11B are omitted from the exclusion bar because no valid predictions exist.\relax }{figure.caption.13}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {10.3}Distance Distribution}{14}{subsection.10.3}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {10.4}Evidence Component Analysis}{14}{subsection.10.4}}
+\@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces Accuracy at five distance thresholds for the five working models. Only predictions with parseable outputs are counted as correct; failures are counted against the denominator (all 2{,}997 images).\relax }}{15}{figure.caption.14}}
+\newlabel{fig:thresholds}{{4}{15}{Accuracy at five distance thresholds for the five working models. Only predictions with parseable outputs are counted as correct; failures are counted against the denominator (all 2{,}997 images).\relax }{figure.caption.14}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {10.5}Geographic Breakdown}{15}{subsection.10.5}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {10.6}Cumulative Distance Distribution}{15}{subsection.10.6}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {10.7}Difficulty-Stratified Accuracy}{15}{subsection.10.7}}
+\@writefile{lof}{\contentsline {figure}{\numberline {5}{\ignorespaces Left: kernel-density violin plots of Haversine error (log scale, failures at 10{,}000\tmspace  +\thinmuskip {.1667em}km cap). Right: percentile box chart (P25--P75, line at P50). Both LLaMA-3.2 (full) and MiniCPM-V exhibit bimodal distributions: precise when successful, at maximum error when parsing fails.\relax }}{16}{figure.caption.16}}
+\newlabel{fig:distribution}{{5}{16}{Left: kernel-density violin plots of Haversine error (log scale, failures at 10{,}000\,km cap). Right: percentile box chart (P25--P75, line at P50). Both LLaMA-3.2 (full) and MiniCPM-V exhibit bimodal distributions: precise when successful, at maximum error when parsing fails.\relax }{figure.caption.16}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {10.8}Pairwise Model Agreement}{16}{subsection.10.8}}
+\@writefile{lof}{\contentsline {figure}{\numberline {6}{\ignorespaces $\Delta $GeoScore for each evidence type per model. Positive values indicate that samples with this evidence type score higher than those without. OSM bars are omitted for LLaMA-3.2 (swap) due to zero valid OSM samples in that condition. The dashed reference line is at $\Delta = 0$.\relax }}{17}{figure.caption.18}}
+\newlabel{fig:evidence}{{6}{17}{$\Delta $GeoScore for each evidence type per model. Positive values indicate that samples with this evidence type score higher than those without. OSM bars are omitted for LLaMA-3.2 (swap) due to zero valid OSM samples in that condition. The dashed reference line is at $\Delta = 0$.\relax }{figure.caption.18}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {10.9}Prediction Outcome Decomposition}{17}{subsection.10.9}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {10.10}Discussion}{17}{subsection.10.10}}
+\newlabel{sec:discussion}{{10.10}{17}{Discussion}{subsection.10.10}{}}
+\@writefile{toc}{\contentsline {paragraph}{LLaMA-3.2-11B leads the benchmark end-to-end.}{17}{section*.25}}
+\@writefile{lof}{\contentsline {figure}{\numberline {7}{\ignorespaces Heatmap of mean GeoScore per geographic region and working model. Cells are annotated with numeric values. Column colour intensity scales independently within each model to highlight within-model regional variation.\relax }}{18}{figure.caption.20}}
+\newlabel{fig:geographic}{{7}{18}{Heatmap of mean GeoScore per geographic region and working model. Cells are annotated with numeric values. Column colour intensity scales independently within each model to highlight within-model regional variation.\relax }{figure.caption.20}{}}
+\@writefile{toc}{\contentsline {paragraph}{Contextualising against the original paper.}{18}{section*.26}}
+\@writefile{toc}{\contentsline {paragraph}{MiniCPM-V-2.6 (SFT) has strong latent capability but a high failure rate.}{18}{section*.27}}
+\@writefile{toc}{\contentsline {paragraph}{MiniCPM-V COMMENT evidence is atypically negative.}{18}{section*.28}}
+\@writefile{lof}{\contentsline {figure}{\numberline {8}{\ignorespaces Cumulative distance distribution for the five working models (log $x$-axis). Circles and squares mark the P50 and P75 of each model's distribution. Dashed vertical lines show the five standard threshold distances. LLaMA-3.2 (full) leads at all fine-grained distances; LLaVA-1.6 pulls even near 2{,}500\tmspace  +\thinmuskip {.1667em}km due to its lower failure rate.\relax }}{19}{figure.caption.21}}
+\newlabel{fig:cdf}{{8}{19}{Cumulative distance distribution for the five working models (log $x$-axis). Circles and squares mark the P50 and P75 of each model's distribution. Dashed vertical lines show the five standard threshold distances. LLaMA-3.2 (full) leads at all fine-grained distances; LLaVA-1.6 pulls even near 2{,}500\,km due to its lower failure rate.\relax }{figure.caption.21}{}}
+\@writefile{toc}{\contentsline {paragraph}{LLaMA-3.2-11B's residual formatting failures are amenable to SFT.}{19}{section*.29}}
+\@writefile{toc}{\contentsline {paragraph}{The Stage-6 swap experiment refutes H2.}{19}{section*.30}}
+\@writefile{lof}{\contentsline {figure}{\numberline {9}{\ignorespaces Accuracy at 25, 200, and 750\tmspace  +\thinmuskip {.1667em}km broken down by image difficulty tercile. Difficulty is defined as mean prediction distance across all working models. All models degrade substantially on the hardest tercile. The cross-model ordering is preserved within each difficulty level.\relax }}{20}{figure.caption.22}}
+\newlabel{fig:difficulty}{{9}{20}{Accuracy at 25, 200, and 750\,km broken down by image difficulty tercile. Difficulty is defined as mean prediction distance across all working models. All models degrade substantially on the hardest tercile. The cross-model ordering is preserved within each difficulty level.\relax }{figure.caption.22}{}}
+\@writefile{toc}{\contentsline {paragraph}{RAG retrieval is systematically harmful.}{20}{section*.31}}
+\@writefile{toc}{\contentsline {paragraph}{COMMENT evidence is consistently beneficial.}{20}{section*.32}}
+\@writefile{lof}{\contentsline {figure}{\numberline {10}{\ignorespaces Lower-triangular heatmap of joint accuracy @200\tmspace  +\thinmuskip {.1667em}km: fraction of images where both models in a pair predict within 200\tmspace  +\thinmuskip {.1667em}km of ground truth. Diagonal entries are individual model accuracy at 200\tmspace  +\thinmuskip {.1667em}km.\relax }}{21}{figure.caption.23}}
+\newlabel{fig:agreement}{{10}{21}{Lower-triangular heatmap of joint accuracy @200\,km: fraction of images where both models in a pair predict within 200\,km of ground truth. Diagonal entries are individual model accuracy at 200\,km.\relax }{figure.caption.23}{}}
+\@writefile{toc}{\contentsline {paragraph}{Geographic variability reveals dataset bias.}{21}{section*.33}}
+\newlabel{sec:limitations}{{10.10}{21}{Limitations of this evaluation}{section*.34}{}}
+\@writefile{toc}{\contentsline {paragraph}{Limitations of this evaluation.}{21}{section*.34}}
+\@writefile{lof}{\contentsline {figure}{\numberline {11}{\ignorespaces Prediction outcome decomposition for the five working models. Each bar represents 100\% of the 2{,}997 benchmark images. Parse failures (grey) are highest for LLaMA-3.2 (swap) and MiniCPM-V.\relax }}{22}{figure.caption.24}}
+\newlabel{fig:failure_modes}{{11}{22}{Prediction outcome decomposition for the five working models. Each bar represents 100\% of the 2{,}997 benchmark images. Parse failures (grey) are highest for LLaMA-3.2 (swap) and MiniCPM-V.\relax }{figure.caption.24}{}}
+\newlabel{sec:failures}{{10.10}{22}{Falcon-11B and Qwen2-VL failures}{section*.35}{}}
+\@writefile{toc}{\contentsline {paragraph}{Falcon-11B and Qwen2-VL failures.}{22}{section*.35}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {10.11}Conclusions}{23}{subsection.10.11}}
+\newlabel{sec:conclusions}{{10.11}{23}{Conclusions}{subsection.10.11}{}}
+\bibstyle{plainnat}
+\bibdata{refs}
+\bibcite{Almazrouei2023Falcon}{{1}{2023}{{Almazrouei et~al.}}{{Almazrouei, Alobeidli, Alshamsi, Cappelli, Cojocaru, Debbah, et~al.}}}
+\bibcite{Chen2024InternVL}{{2}{2024}{{Chen et~al.}}{{Chen, Wu, Wang, Su, Chen, Xing, Zheng, Zhang, Zhu, Lu, et~al.}}}
+\bibcite{Chiang2023Vicuna}{{3}{2023}{{Chiang et~al.}}{{Chiang, Li, Lin, Sheng, Wu, Zhang, Zheng, Zhuang, Zhuang, Gonzalez, Stoica, and Xing}}}
+\bibcite{Hays2008IM2GPS}{{4}{2008}{{Hays and Efros}}{{}}}
+\bibcite{Hu2022LoRA}{{5}{2022}{{Hu et~al.}}{{Hu, Shen, Wallis, Allen-Zhu, Li, Wang, Wang, and Chen}}}
+\bibcite{Johnson2021FAISS}{{6}{2021}{{Johnson et~al.}}{{Johnson, Douze, and J{\'e}gou}}}
+\bibcite{Kirillov2023SAM}{{7}{2023}{{Kirillov et~al.}}{{Kirillov, Mintun, Ravi, Mao, Rolland, Gustafson, Rearick, Lowe, Berg, Belongie, Girshick, and Doll{\'a}r}}}
+\bibcite{Kwon2023vLLM}{{8}{2023}{{Kwon et~al.}}{{Kwon, Li, Zhuang, Sheng, Zheng, Yu, Gonzalez, Zhang, and Stoica}}}
+\bibcite{Liu2024LLaVA15}{{9}{2024{a}}{{Liu et~al.}}{{Liu, Li, Li, and Lee}}}
+\bibcite{Liu2024LLaVANeXT}{{10}{2024{b}}{{Liu et~al.}}{{Liu, Li, Li, and Lee}}}
+\bibcite{Liu2023GroundingDINO}{{11}{2024{c}}{{Liu et~al.}}{{Liu, Zeng, Ren, Li, Zhang, Yang, Li, Yang, Su, Zhu, and Zhang}}}
+\bibcite{Lu2024DeepSeekVL}{{12}{2024}{{Lu et~al.}}{{Lu, Liu, Zhang, Wang, Dong, Liu, Sun, Ren, Li, Yang, Sun, Deng, Xu, Xie, and Ruan}}}
+\bibcite{Meta2024Llama3}{{13}{2024}{{Meta AI}}{{}}}
+\bibcite{msSwift2024}{{14}{2024}{{ModelScope Community}}{{}}}
+\bibcite{Radford2021CLIP}{{15}{2021}{{Radford et~al.}}{{Radford, Kim, Hallacy, Ramesh, Goh, Agarwal, Sastry, Askell, Mishkin, Clark, Krueger, and Sutskever}}}
+\bibcite{Vo2017IM2GPS3K}{{16}{2017}{{Vo et~al.}}{{Vo, Jacobs, and Hays}}}
+\bibcite{Wang2024Qwen2VL}{{17}{2024}{{Wang et~al.}}{{Wang, Bai, Tan, Wang, Fan, Bai, Chen, Liu, Wang, Ge, Fan, Dang, et~al.}}}
+\bibcite{Yao2024MiniCPMV}{{18}{2024}{{Yao et~al.}}{{Yao, Yu, Zhang, Wang, Cui, Zhu, Cai, Li, Zhao, He, et~al.}}}
+\bibcite{Yu2025NAVIG}{{19}{2025}{{Yu et~al.}}{{}}}
+\bibcite{Zhai2023SigLIP}{{20}{2023}{{Zhai et~al.}}{{Zhai, Mustafa, Kolesnikov, and Beyer}}}
+\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces Model inventory, experimental roles, and evaluation status. ``SFT'' indicates that a LoRA adapter fine-tuned on NaviClues is applied at Stage\nobreakspace  {}1; all other stages always use pretrained base weights. \dag  \nobreakspace  {}LLaMA-3.2-11B is the only model evaluated in both the full-pipeline and Stage-6-swap conditions. \ddag  \nobreakspace  {}InternVL2-8B was implemented and is described in Section\nobreakspace  {}\ref  {sec:cmp}, but has not yet been evaluated.\relax }}{27}{table.caption.3}}
+\providecommand*\caption@xref[2]{\@setref\relax\@undefined{#1}}
+\newlabel{tab:summary}{{1}{27}{Model inventory, experimental roles, and evaluation status. ``SFT'' indicates that a LoRA adapter fine-tuned on NaviClues is applied at Stage~1; all other stages always use pretrained base weights. \dag ~LLaMA-3.2-11B is the only model evaluated in both the full-pipeline and Stage-6-swap conditions. \ddag ~InternVL2-8B was implemented and is described in Section~\ref {sec:cmp}, but has not yet been evaluated.\relax }{table.caption.3}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Architectural summary and experimental condition for all seven model configurations. Primary models (rows 1--3) use an SFT adapter at Stage\nobreakspace  {}1; comparison models (rows 4--7) run the full pipeline zero-shot. LLaMA-3.2-11B additionally appears in the Stage-6 swap experiment. InternVL2-8B is implemented but not yet evaluated (\S  \ref  {sec:internvl2}).\relax }}{28}{table.caption.11}}
+\newlabel{tab:diff}{{2}{28}{Architectural summary and experimental condition for all seven model configurations. Primary models (rows 1--3) use an SFT adapter at Stage~1; comparison models (rows 4--7) run the full pipeline zero-shot. LLaMA-3.2-11B additionally appears in the Stage-6 swap experiment. InternVL2-8B is implemented but not yet evaluated (\S \ref {sec:internvl2}).\relax }{table.caption.11}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces Overall pipeline performance on im2gps3k (2{,}997 images). ``GS (excl.\ fail)'' is the mean GeoScore computed only over successfully parsed predictions. Best result for each column among working models is \textbf  {bold}.\relax }}{29}{table.caption.12}}
+\newlabel{tab:overall}{{3}{29}{Overall pipeline performance on im2gps3k (2{,}997 images). ``GS (excl.\ fail)'' is the mean GeoScore computed only over successfully parsed predictions. Best result for each column among working models is \textbf {bold}.\relax }{table.caption.12}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {4}{\ignorespaces Haversine error percentiles (km) for the five working models. Percentiles are computed over all images, with failures assigned the maximum possible distance of 10{,}000\tmspace  +\thinmuskip {.1667em}km (antipodal).\relax }}{29}{table.caption.15}}
+\newlabel{tab:percentiles}{{4}{29}{Haversine error percentiles (km) for the five working models. Percentiles are computed over all images, with failures assigned the maximum possible distance of 10{,}000\,km (antipodal).\relax }{table.caption.15}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {5}{\ignorespaces Evidence component impact: $\Delta $GeoScore = mean(GeoScore $|$ evidence present) $-$ mean(GeoScore $|$ evidence absent). Sample sizes for OSM are small (parentheses); interpret those estimates with caution. MiniCPM-V's negative COMMENT delta is discussed in Section\nobreakspace  {}\ref  {sec:discussion}.\relax }}{29}{table.caption.17}}
+\newlabel{tab:evidence}{{5}{29}{Evidence component impact: $\Delta $GeoScore = mean(GeoScore $|$ evidence present) $-$ mean(GeoScore $|$ evidence absent). Sample sizes for OSM are small (parentheses); interpret those estimates with caution. MiniCPM-V's negative COMMENT delta is discussed in Section~\ref {sec:discussion}.\relax }{table.caption.17}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {6}{\ignorespaces Mean GeoScore by geographic region for all five working models. \emph  {N} is the number of im2gps3k images assigned to each region. Best score per row is \textbf  {bold}.\relax }}{29}{table.caption.19}}
+\newlabel{tab:geo}{{6}{29}{Mean GeoScore by geographic region for all five working models. \emph {N} is the number of im2gps3k images assigned to each region. Best score per row is \textbf {bold}.\relax }{table.caption.19}{}}

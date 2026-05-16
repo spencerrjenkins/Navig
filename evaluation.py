@@ -1,14 +1,34 @@
 from tqdm import tqdm
 import json
-from utils import load_data, dump_jsonl, parse_json, haversine_distance,search_place_with_retry, PatchImages
-from utils import retrieve_similar_images
-from llm import LLaVA, Qwen, LLaVA_sft, Qwen_sft, CPM, CPM_sft, LLaVA_vllm, LLaVA_sft_vllm
+import re
+from utils import load_data, dump_jsonl, parse_json, haversine_distance, search_place_with_retry, PatchImages
+from utils import retrieve_similar_images, _parse_osm_candidates
+from llm import LLaVA, Qwen, LLaVA_sft, Qwen_sft, CPM, CPM_sft, LLaVA_vllm, LLaVA_sft_vllm, DeepSeekVL, FalconVLM, Llama32Vision
 import os
 import argparse
 import numpy as np
 import sys
 from PIL import Image
 import prompts
+
+
+def _parse_coord(value):
+    """Parse a coordinate value that may be a plain float, degree-notation string
+    ('8.6836° N'), or hedged string ('Approximately 75° W').
+    Raises ValueError for unparseable values like 'Unknown' or JSON null (None)."""
+    if value is None:
+        raise ValueError("Unparseable coordinate: None")
+    s = str(value).strip()
+    if s.lower() in ('unknown', 'n/a', '', 'nan', 'null', 'none', 'infinity', 'undefined'):
+        raise ValueError(f"Unparseable coordinate: {s!r}")
+    s = re.sub(r'(?i)approximately\s*', '', s).strip()
+    m = re.match(r'^(-?\d+(?:\.\d+)?)\s*°?\s*([NSEWnsew])?$', s)
+    if m:
+        val = float(m.group(1))
+        if (m.group(2) or '').upper() in ('S', 'W'):
+            val = -val
+        return val
+    return float(s)
 """
 Define the following parameters for evaluation:
     dataset: name of the dataset, could be Gws15k, im2gps3k, OpenWorld, and yfcc4k.
@@ -50,9 +70,15 @@ class Evaluator:
         if self.model_type == "llava":
             reasoning_model = LLaVA_sft(model_path=self.model_path, ckpt_dir=self.ckpt_dir)
         elif self.model_type == "qwen":
-            reasoning_model = Qwen_sft(model_path = self.model_path, ckpt_dir = self.ckpt_dir)
+            reasoning_model = Qwen_sft(model_path=self.model_path, ckpt_dir=self.ckpt_dir)
+        elif self.model_type == "llama32vision":
+            reasoning_model = Llama32Vision(model_path=self.model_path)
+        elif self.model_type == "deepseek":
+            reasoning_model = DeepSeekVL(model_path=self.model_path)
+        elif self.model_type == "falcon":
+            reasoning_model = FalconVLM(model_path=self.model_path)
         else:
-            reasoning_model = CPM_sft(model_path = self.model_path, ckpt_dir = self.ckpt_dir)
+            reasoning_model = CPM_sft(model_path=self.model_path, ckpt_dir=self.ckpt_dir)
         for row in tqdm(data):
             image = f"{dataset_path}/images/{row['ID']}.jpg"
             query = prompts.reasoning_prompt
@@ -147,37 +173,36 @@ class Evaluator:
             row["comment"] = commented_dict
             yield row
 
-    def getOSM(self):       
+    def getOSM(self):
         print("///////////The 5rd stage: Search OCR///////////")
-            
-        # load dataset
-        data = load_data(output_path+"/results_s4.jsonl") 
-        
-        prompt =prompts.osm_gen
+        data = load_data(output_path+"/results_s4.jsonl")
+        prompt = prompts.osm_gen
         for row in tqdm(data):
             row['genQuery'] = {}
             row['osm'] = None
-            for category in row["crop"].keys() :
+            for category in row["crop"].keys():
                 row['genQuery'][category] = []
                 images = row["crop"][category]
                 for image in images:
                     query = self.base_model.base_inference(prompt, image)
-                    print(query)
                     row['genQuery'][category].append(query)
-                    if 'None' in query:
-                        row['osm'] = None
-                    else:
-                        response = search_place_with_retry(query, top_k=3)
+                    candidates = _parse_osm_candidates(query)
+                    if not candidates:
+                        continue
+                    response = search_place_with_retry(query, top_k=3)
+                    if response is not None:
                         if row['osm'] is None:
                             row['osm'] = response
-                        elif response is not None:
+                        else:
                             row['osm'].extend(response)
             yield row
     
 
-    def guessCoordinates(self): 
+    def guessCoordinates(self, only_ids=None):
         print("///////////The 6th stage: Guessing the Coordinates///////////")
         data = load_data(output_path+"/results_s5.jsonl")
+        if only_ids is not None:
+            data = [row for row in data if row['ID'] in only_ids]
         '''
         create a query. this query forms like:
             base_query: a base query for models, which can be used for directly test model performance.
@@ -236,12 +261,11 @@ class Evaluator:
             usage = {"reasoning": k_reason, "osm": k_osm, "rag": k_rag, "comment": k_comment}
             row["usage"] = usage
             query = base_query + intro_query * k_intro + reason_query * k_reason + osm_query * k_osm + comment_query * k_comment + rag_query * k_rag + outro_query * k_outro
-            print(query)
             answer = self.base_model.base_inference(query, image) 
-            print(f"model response {answer}")
+            #print(f"model response {answer}")
             answer = parse_json(answer)
-            print(f"parser response {answer}")
-            print("correct answer:", row["LAT"], row["LON"])
+            #print(f"parser response {answer}")
+            #print("correct answer:", row["LAT"], row["LON"])
             sys.stdout.flush()
             row["answer"] = answer
             yield row
@@ -259,10 +283,17 @@ class Evaluator:
                 self.base_model = LLaVA_vllm(model_path=self.model_path)
             else:
                 self.base_model = LLaVA(model_path=self.model_path)
+        elif self.model_type == 'llama32vision':
+            self.base_model = Llama32Vision(model_path=self.model_path)
+        elif self.model_type == 'deepseek':
+            self.base_model = DeepSeekVL(model_path=self.model_path)
+        elif self.model_type == 'falcon':
+            self.base_model = FalconVLM(model_path=self.model_path)
         else:
             self.base_model = CPM(model_path=self.model_path)
 
     def forward(self):
+        os.makedirs(output_path, exist_ok=True)
         # Stage 1 (uses reasoning_model internally, not self.base_model):
         o_file = f"{output_path}/results_s1.jsonl"
         dump_jsonl(self.getReasoning(), o_file)
@@ -287,9 +318,36 @@ class Evaluator:
         dump_jsonl(self.getOSM(), o_file)
 
     def guess_forward(self):
-        # Guess Stage:
         o_file = f"{output_path}/{results_fileName}"
         dump_jsonl(self.guessCoordinates(), o_file)
+
+    def retry_guess_forward(self):
+        """Re-run stage 6 only for rows where answer=None (JSON parse failed entirely).
+        Rows with answer set but 'Unknown' coordinates are valid model outputs and are
+        NOT retried — the model expressed genuine uncertainty. Patches file in-place."""
+        existing_path = f"{output_path}/{results_fileName}"
+        if not os.path.exists(existing_path):
+            print(f"No existing results at {existing_path}; running full stage 6.")
+            self.guess_forward()
+            return
+        existing = load_data(existing_path)
+
+        # Only retry rows where JSON parsing failed completely.  Rows where the
+        # model returned {"latitude": "Unknown", ...} are valid outputs — retrying
+        # them wastes GPU time and produces the same result.
+        def _is_failed(row):
+            return row.get('answer') is None
+
+        failed_ids = {row['ID'] for row in existing if _is_failed(row)}
+        if not failed_ids:
+            print(f"No failed rows found in {existing_path}. Nothing to retry.")
+            return
+        print(f"Retrying {len(failed_ids)} failed rows out of {len(existing)} total...")
+        retry_map = {row['ID']: row for row in self.guessCoordinates(only_ids=failed_ids)}
+        merged = [retry_map.get(row['ID'], row) for row in existing]
+        dump_jsonl(merged, existing_path)
+        still_failed = sum(1 for row in merged if _is_failed(row))
+        print(f"Updated {len(retry_map)} rows. Still failing after retry: {still_failed}.")
 
 
     def calculate_score(self):
@@ -301,7 +359,7 @@ class Evaluator:
         for row in data:
             correct_answer = [float(row["LAT"]), float(row["LON"])]
             try:
-                guessed_answer = [float(row["answer"]["latitude"]), float(row["answer"]["longitude"])]
+                guessed_answer = [_parse_coord(row["answer"]["latitude"]), _parse_coord(row["answer"]["longitude"])]
                 distance = haversine_distance(guessed_answer, correct_answer)
             except:
                 guessed_answer = [0, 0]
@@ -316,9 +374,9 @@ class Evaluator:
                     counts[i] += 1
         total_num = len(data)
         score = [count / total_num for count in counts]
-        print(f"Five LeveL: Street-> Continent{score}")
-        print(f"Avg.Geoscore is {total_points/total_num}")
-        print(f"Avg.distance is {Distance/total_num}")
+        # print(f"Five LeveL: Street-> Continent{score}")
+        # print(f"Avg.Geoscore is {total_points/total_num}")
+        # print(f"Avg.distance is {Distance/total_num}")
 
     def calculate_score_cc(self):
         data = load_data(f"{output_path}/{results_fileName}")
@@ -337,12 +395,12 @@ class Evaluator:
                 continue
         total_num = len(data)
         score = [count / total_num for count in counts]
-        print(score)
+        # print(score)
 
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset_path', type=str, default="im2gps3k",help="Please input valid dataset path,only for im2gps3k, yfcc4k, and Gws5k")
-    parser.add_argument('--model', type=str, default='qwen',choices=["qwen", "llava", "cpm"])
+    parser.add_argument('--model', type=str, default='qwen', choices=["qwen", "llava", "cpm", "deepseek", "falcon", "llama32vision"])
     parser.add_argument('--reasoning_path',  type=str, default ='.')
     parser.add_argument('--results_file_Name', type=str, default = 'Final_results.jsonl')
     parser.add_argument('--crop_box_treshold', type=float, default = 0.65)
@@ -352,6 +410,8 @@ def parse_args():
     parser.add_argument('--use_vllm', action='store_true', help="Use vLLM for faster LLaVA inference")
     parser.add_argument('--num_shards', type=int, default=1, help="Total number of parallel shards")
     parser.add_argument('--shard_id', type=int, default=0, help="Which shard this job processes (0-indexed)")
+    parser.add_argument('--stage6_only', action='store_true', help="Skip stages 1-5; run only stage 6 on existing results_s5.jsonl")
+    parser.add_argument('--retry_failed', action='store_true', help="Re-run stage 6 only for rows with answer=None in the existing output; patches file in-place (implies --stage6_only)")
     return parser.parse_args()
 
 if __name__ == "__main__":
@@ -373,9 +433,15 @@ if __name__ == "__main__":
         os.makedirs(output_path)
 
     evaluator = Evaluator(dataset_path, model, output_path, crop_box_treshold, crop_text_treshold, model_path, ckpt_dir, use_vllm=use_vllm, shard_id=shard_id, num_shards=num_shards)
-    evaluator.forward()
-        
-    evaluator.guess_forward()
+    if args.stage6_only or args.retry_failed:
+        evaluator._load_base_model()
+    else:
+        evaluator.forward()
+
+    if args.retry_failed:
+        evaluator.retry_guess_forward()
+    else:
+        evaluator.guess_forward()
     evaluator.calculate_score()
     evaluator.calculate_score_cc()
 

@@ -2,7 +2,7 @@
 #SBATCH --job-name=navig-guess
 #SBATCH --output=%j_%a.guess.out
 #SBATCH --error=%j_%a.guess.err
-#SBATCH --time=02:00:00
+#SBATCH --time=12:00:00
 #SBATCH --account=nexus
 #SBATCH --partition=tron
 #SBATCH --qos=default
@@ -44,28 +44,35 @@ cd /nfshomes/srjnk01/Navig
 NUM_SHARDS=4
 SHARD_ID=${SLURM_ARRAY_TASK_ID}
 
-DATASET=dataset/im2gps3k_rgb_images
+DATASET=dataset/test
 # Reads from the merged s5 file; sharding splits the rows across array tasks.
-S5_FILE=output/im2gps3k_rgb_images/merged_s5.jsonl
+S5_FILE=output/test/merged_s5.jsonl
 
-# ── Llama 3.2 11B Vision (primary experiment) ──────────────────────────────
-MODEL=llama32vision
-MODEL_PATH=/fs/nexus-scratch/srjnk01/llama-3.2-11b-vision-instruct
-RESULTS_NAME=results_s6_llama32.jsonl
+# ── Model selection ─────────────────────────────────────────────────────────
+# Override any of these at submission time:
+#   MODEL=deepseek MODEL_PATH=... RESULTS_NAME=... sbatch script_guess_only.sh
+#
+# Supported MODEL values: llava, qwen, cpm, cpm_sft, llama32vision, internvl2, deepseek, falcon
+# For cpm_sft, also set: CKPT_DIR=vlms/cpm/checkpoint-534
+MODEL=${MODEL:-llama32vision}
+MODEL_PATH=${MODEL_PATH:-/fs/nexus-scratch/srjnk01/llama-3.2-11b-vision-instruct}
+CKPT_DIR=${CKPT_DIR:-}
+RESULTS_NAME=${RESULTS_NAME:-results_s6_${MODEL}.jsonl}
 
-# ── InternVL2-8B (alternative — swap this block to run it instead) ─────────
-# MODEL=internvl2
-# MODEL_PATH=/fs/nexus-scratch/srjnk01/InternVL2-8B
-# RESULTS_NAME=results_s6_internvl2.jsonl
-
-SHARD_OUTPUT=output/im2gps3k_rgb_images/guess_shard_${SHARD_ID}_of_${NUM_SHARDS}
+SHARD_OUTPUT=output/test/guess_shard_${SHARD_ID}_of_${NUM_SHARDS}
 mkdir -p "${SHARD_OUTPUT}"
+
+CKPT_ARG=""
+if [[ -n "${CKPT_DIR}" ]]; then
+    CKPT_ARG="--ckpt_dir ${CKPT_DIR}"
+fi
 
 python3 guess_only.py \
     --s5_path      "${S5_FILE}" \
     --dataset_path "${DATASET}" \
     --model        "${MODEL}" \
     --model_path   "${MODEL_PATH}" \
+    ${CKPT_ARG} \
     --output       "${SHARD_OUTPUT}/${RESULTS_NAME}" \
     --num_shards   ${NUM_SHARDS} \
     --shard_id     ${SHARD_ID}

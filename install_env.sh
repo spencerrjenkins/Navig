@@ -32,6 +32,8 @@ $PIP install \
 
 echo "==> Step 3: Install ms-swift (for LLaVA/Qwen inference)"
 $PIP install "ms-swift==2.5.0.post1"
+# Required by swift for Qwen2-VL model loading; 0.0.14 removed IMAGE_FACTOR/MIN_PIXELS/MAX_PIXELS
+$PIP install "qwen-vl-utils==0.0.9"
 # PyPI pyairports 0.0.1 is a squatter package; install the real one from GitHub
 $PIP install "git+https://github.com/NICTA/pyairports.git"
 

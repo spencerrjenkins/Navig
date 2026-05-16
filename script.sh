@@ -3,7 +3,7 @@
 #SBATCH --job-name=navig-eval
 #SBATCH --output=%j.test.out
 #SBATCH --error=%j.test.err
-#SBATCH --time=04:00:00
+#SBATCH --time=12:00:00
 #SBATCH --account=nexus
 #SBATCH --partition=tron
 #SBATCH --qos=default
@@ -28,17 +28,18 @@ cd /nfshomes/srjnk01/Navig
 
 NUM_SHARDS=4
 SHARD_ID=${SLURM_ARRAY_TASK_ID}
-SHARD_OUTPUT=output/im2gps3k_rgb_images/shard_${SHARD_ID}_of_${NUM_SHARDS}
+SHARD_OUTPUT=output/im2gps3k_rgb_images/qwen_shard_${SHARD_ID}_of_${NUM_SHARDS}
 
 python3 evaluation.py \
-    --model "llava" \
+    --model "qwen" \
     --dataset_path dataset/im2gps3k_rgb_images \
     --reasoning_path ${SHARD_OUTPUT} \
-    --results_file_Name "results_s6_llava.jsonl" \
+    --results_file_Name "results_s6_qwen.jsonl" \
     --crop_box_treshold 0.3 \
     --crop_text_treshold 0.25 \
-    --model_path /fs/nexus-scratch/srjnk01/llava-v1.6-vicuna-7b-hf \
-    --ckpt_dir vlms/NAVIG/llava1_6-vicuna-7b-instruct \
+    --model_path /fs/nexus-scratch/srjnk01/Qwen2.5-VL-7B-Instruct \
+    --ckpt_dir vlms/NAVIG/qwen2-vl-7b-instruct \
     --num_shards ${NUM_SHARDS} \
     --shard_id ${SHARD_ID} \
     --use_vllm
+

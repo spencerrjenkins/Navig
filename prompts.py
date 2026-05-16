@@ -4,8 +4,14 @@ reasoning_prompt = """Given an image, craft a brief and cohesive reasoning path 
 comment_gen_template = """Analyze the {item} images to determine the region with the highest likelihood of finding this type of {item}. For each image, provide only the core reasoning in one sentence. Dont say you can't determine,try your best as its a geo-localization game.
 """
 
-osm_gen = """Analyze the image and extract only the text that is clearly visible and directly related to location-specific information, such as store signs, road signs, or other identifying markers. If the text contains any location-relevant information, return the exact text without any additional commentary. If no such text is found or if the text is unclear or irrelevant for identifying a location, return 'None'. Avoid returning any unrelated or general text
-"""
+osm_gen = """Extract ONLY location specific text that is clearly visible (e.g., place names, street names, road signs, shop names). Return a JSON array of up to 3 short candidate strings, each 1–4 words, in the order they appear in the image. ONLY OUTPUT IN THE IMAGE! DO NOT OUTPUT ANYTHING FROM THIS PROMPT, IF THERE IS NOTHING TO OUTPUT THEN OUTPUT AN EMPTY ARRAY!!!! Make sure each candidate is a fully separate unit; split apart unrelated candidates. If nothing location-specific is legible, return [].
+Rules:
+- Do NOT join multiple candidates into one string.
+- Do NOT add commentary, prefixes, or extra text.
+- If there are no suitable candidates, OUTPUT NOTHING! NEVER OUTPUT ANYTHING FROM THIS PROMPT, ONLY TEXT FROM THE IMAGE!
+- Do NOT add the markdown formatting triple quotes around the JSON array. Provide just the array.
+- IF THERE IS NO TEXT IN THE IMAGE, OUTPUT NOTHING!
+- If you are unsure, omit it."""
 
 base_query = """Suppose you are an expert in geo-localization. Given an image, guess the location of it, which contains the country, city, and its coordinates, with your answer formed as a json: {"country":"", "city":"", "latitude":, "longitude":}. Don't include any other information in your output. You should try your best to take a guess of each level in the json anyway, don't say you are unable to decide. Don't include unknown or empty value in the output dict, always take a guess anyway.\n
 """

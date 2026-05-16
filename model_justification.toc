@@ -1,0 +1,45 @@
+\contentsline {section}{\numberline {1}Overview}{2}{section.1}
+\contentsline {paragraph}{Why this evaluation extends the original paper.}{2}{section*.2}
+\contentsline {section}{\numberline {2}Evaluation Dataset: im2gps3k}{3}{section.2}
+\contentsline {paragraph}{Geographic distribution.}{3}{section*.4}
+\contentsline {paragraph}{Image content and difficulty.}{3}{section*.6}
+\contentsline {paragraph}{Suitability for NAVIG evaluation.}{6}{section*.8}
+\contentsline {section}{\numberline {3}Training Dataset: NaviClues}{6}{section.3}
+\contentsline {paragraph}{NaviClues vs.\ im2gps3k: domain mismatch.}{6}{section*.9}
+\contentsline {section}{\numberline {4}Fine-Tuning and Inference Infrastructure}{7}{section.4}
+\contentsline {section}{\numberline {5}Primary Pipeline Models (with Supervised Fine-Tuning)}{7}{section.5}
+\contentsline {subsection}{\numberline {5.1}LLaVA-1.6-Vicuna-7B (\texttt {LLaVA} / \texttt {LLaVA\_sft})}{7}{subsection.5.1}
+\contentsline {subsection}{\numberline {5.2}Qwen2-VL-7B-Instruct (\texttt {Qwen} / \texttt {Qwen\_sft})}{8}{subsection.5.2}
+\contentsline {subsection}{\numberline {5.3}MiniCPM-V-2.6 (\texttt {CPM} / \texttt {CPM\_sft})}{8}{subsection.5.3}
+\contentsline {section}{\numberline {6}Full-Pipeline Comparison Models (Zero-Shot, No SFT)}{9}{section.6}
+\contentsline {paragraph}{Relationship to the Stage-6 swap experiment.}{9}{section*.10}
+\contentsline {subsection}{\numberline {6.1}Llama-3.2-11B-Vision-Instruct (\texttt {Llama32Vision})}{9}{subsection.6.1}
+\contentsline {subsection}{\numberline {6.2}DeepSeek-VL-7B-Chat (\texttt {DeepSeekVL})}{10}{subsection.6.2}
+\contentsline {subsection}{\numberline {6.3}Falcon-11B-VLM (\texttt {FalconVLM})}{10}{subsection.6.3}
+\contentsline {subsection}{\numberline {6.4}InternVL2-8B (\texttt {InternVL2}) --- Planned}{11}{subsection.6.4}
+\contentsline {section}{\numberline {7}Stage-6 Swap Experiment}{11}{section.7}
+\contentsline {section}{\numberline {8}Architectural Comparison}{12}{section.8}
+\contentsline {section}{\numberline {9}Summary and Research Gaps}{12}{section.9}
+\contentsline {section}{\numberline {10}Experimental Results and Analysis}{13}{section.10}
+\contentsline {subsection}{\numberline {10.1}Overall Pipeline Performance}{13}{subsection.10.1}
+\contentsline {subsection}{\numberline {10.2}Distance Accuracy Across Thresholds}{13}{subsection.10.2}
+\contentsline {subsection}{\numberline {10.3}Distance Distribution}{14}{subsection.10.3}
+\contentsline {subsection}{\numberline {10.4}Evidence Component Analysis}{14}{subsection.10.4}
+\contentsline {subsection}{\numberline {10.5}Geographic Breakdown}{15}{subsection.10.5}
+\contentsline {subsection}{\numberline {10.6}Cumulative Distance Distribution}{15}{subsection.10.6}
+\contentsline {subsection}{\numberline {10.7}Difficulty-Stratified Accuracy}{15}{subsection.10.7}
+\contentsline {subsection}{\numberline {10.8}Pairwise Model Agreement}{16}{subsection.10.8}
+\contentsline {subsection}{\numberline {10.9}Prediction Outcome Decomposition}{17}{subsection.10.9}
+\contentsline {subsection}{\numberline {10.10}Discussion}{17}{subsection.10.10}
+\contentsline {paragraph}{LLaMA-3.2-11B leads the benchmark end-to-end.}{17}{section*.25}
+\contentsline {paragraph}{Contextualising against the original paper.}{18}{section*.26}
+\contentsline {paragraph}{MiniCPM-V-2.6 (SFT) has strong latent capability but a high failure rate.}{18}{section*.27}
+\contentsline {paragraph}{MiniCPM-V COMMENT evidence is atypically negative.}{18}{section*.28}
+\contentsline {paragraph}{LLaMA-3.2-11B's residual formatting failures are amenable to SFT.}{19}{section*.29}
+\contentsline {paragraph}{The Stage-6 swap experiment refutes H2.}{19}{section*.30}
+\contentsline {paragraph}{RAG retrieval is systematically harmful.}{20}{section*.31}
+\contentsline {paragraph}{COMMENT evidence is consistently beneficial.}{20}{section*.32}
+\contentsline {paragraph}{Geographic variability reveals dataset bias.}{21}{section*.33}
+\contentsline {paragraph}{Limitations of this evaluation.}{21}{section*.34}
+\contentsline {paragraph}{Falcon-11B and Qwen2-VL failures.}{22}{section*.35}
+\contentsline {subsection}{\numberline {10.11}Conclusions}{23}{subsection.10.11}

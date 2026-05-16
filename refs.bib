@@ -1,0 +1,196 @@
+% ============================================================
+% NAVIG pipeline: bibliography
+% ============================================================
+
+% ---- Original NAVIG paper ----------------------------------
+@article{Yu2025NAVIG,
+  title   = {{NAVIG}: Natural Language-Guided Analysis with Vision Language Models
+             for Image Geo-Localization},
+  author  = {Yu, Zheyuan and others},
+  journal = {arXiv preprint arXiv:2502.14638},
+  year    = {2025}
+}
+
+% ---- Primary VLMs (with SFT) --------------------------------
+
+@misc{Liu2024LLaVANeXT,
+  title        = {{LLaVA-NeXT}: Improved reasoning, {OCR}, and world knowledge},
+  author       = {Liu, Haotian and Li, Chunyuan and Li, Yuheng and Lee, Yong Jae},
+  howpublished = {\url{https://llava-vl.github.io/blog/2024-01-30-llava-next/}},
+  year         = {2024}
+}
+
+@inproceedings{Liu2024LLaVA15,
+  title     = {Improved Baselines with Visual Instruction Tuning},
+  author    = {Liu, Haotian and Li, Chunyuan and Li, Yuheng and Lee, Yong Jae},
+  booktitle = {{IEEE/CVF} Conference on Computer Vision and Pattern Recognition ({CVPR})},
+  pages     = {26286--26296},
+  year      = {2024}
+}
+
+@article{Wang2024Qwen2VL,
+  title   = {{Qwen2-VL}: Enhancing Vision-Language Model's Perception of the World
+             at Any Resolution},
+  author  = {Wang, Peng and Bai, Shuai and Tan, Sinan and Wang, Shijie
+             and Fan, Zhihao and Bai, Jinze and Chen, Keqin and Liu, Xuejing
+             and Wang, Jialin and Ge, Wenbin and Fan, Yang and Dang, Kai and others},
+  journal = {arXiv preprint arXiv:2409.12191},
+  year    = {2024}
+}
+
+@article{Yao2024MiniCPMV,
+  title   = {{MiniCPM-V}: A {GPT-4V} Level {MLLM} on Your Phone},
+  author  = {Yao, Yuan and Yu, Tianyu and Zhang, Ao and Wang, Chongyi and Cui, Junbo
+             and Zhu, Hongji and Cai, Tianchi and Li, Haoyu and Zhao, Weilin
+             and He, Zhihui and others},
+  journal = {arXiv preprint arXiv:2408.01800},
+  year    = {2024}
+}
+
+% ---- Stage-6 swap models (no SFT) ---------------------------
+
+@article{Meta2024Llama3,
+  title   = {The {Llama} 3 Herd of Models},
+  author  = {{Meta AI}},
+  journal = {arXiv preprint arXiv:2407.21783},
+  year    = {2024}
+}
+
+@inproceedings{Chen2024InternVL,
+  title     = {{InternVL}: Scaling up Vision Foundation Models and Aligning
+               for Generic Visual-Linguistic Tasks},
+  author    = {Chen, Zhe and Wu, Jiannan and Wang, Wenhai and Su, Weijie and Chen, Guo
+               and Xing, Sen and Zheng, Muyan and Zhang, Qibin and Zhu, Xingcheng
+               and Lu, Lewei and others},
+  booktitle = {{IEEE/CVF} Conference on Computer Vision and Pattern Recognition ({CVPR})},
+  pages     = {24185--24198},
+  year      = {2024}
+}
+
+@article{Lu2024DeepSeekVL,
+  title   = {{DeepSeek-VL}: Towards Real-World Vision-Language Understanding},
+  author  = {Lu, Haoyu and Liu, Wen and Zhang, Bo and Wang, Bingxuan and Dong, Kai
+             and Liu, Bo and Sun, Jingxiang and Ren, Tongzheng and Li, Zhuoshu
+             and Yang, Hao and Sun, Yaofeng and Deng, Chengqi and Xu, Hanwei
+             and Xie, Zhenda and Ruan, Chong},
+  journal = {arXiv preprint arXiv:2403.05525},
+  year    = {2024}
+}
+
+@article{Almazrouei2023Falcon,
+  title   = {The {Falcon} Series of Open Language Models},
+  author  = {Almazrouei, Ebtesam and Alobeidli, Hamza and Alshamsi, Abdulaziz
+             and Cappelli, Alessandro and Cojocaru, Ruxandra and Debbah, M{\'e}rouane
+             and others},
+  journal = {arXiv preprint arXiv:2311.16867},
+  year    = {2023}
+}
+
+% ---- Supporting architectures -------------------------------
+
+@misc{Chiang2023Vicuna,
+  title        = {Vicuna: An Open-Source Chatbot Impressing {GPT-4} with
+                  90\% {ChatGPT} Quality},
+  author       = {Chiang, Wei-Lin and Li, Zhuohan and Lin, Zi and Sheng, Ying
+                  and Wu, Zhanghao and Zhang, Hao and Zheng, Lianmin and Zhuang, Siyuan
+                  and Zhuang, Yonghao and Gonzalez, Joseph E. and Stoica, Ion
+                  and Xing, Eric P.},
+  howpublished = {\url{https://lmsys.org/blog/2023-03-30-vicuna/}},
+  year         = {2023}
+}
+
+@inproceedings{Zhai2023SigLIP,
+  title     = {Sigmoid Loss for Language Image Pre-Training},
+  author    = {Zhai, Xiaohua and Mustafa, Basil and Kolesnikov, Alexander
+               and Beyer, Lucas},
+  booktitle = {{IEEE/CVF} International Conference on Computer Vision ({ICCV})},
+  year      = {2023}
+}
+
+@inproceedings{Kirillov2023SAM,
+  title     = {Segment Anything},
+  author    = {Kirillov, Alexander and Mintun, Eric and Ravi, Nikhila and Mao, Hanzi
+               and Rolland, Chloe and Gustafson, Laura and Rearick, Tete and Lowe, David
+               and Berg, Alexander C. and Belongie, Serge and Girshick, Ross
+               and Doll{\'a}r, Piotr},
+  booktitle = {{IEEE/CVF} International Conference on Computer Vision ({ICCV})},
+  year      = {2023}
+}
+
+% ---- Pipeline infrastructure --------------------------------
+
+@inproceedings{Liu2023GroundingDINO,
+  title     = {{Grounding DINO}: Marrying {DINO} with Grounded Pre-Training
+               for Open-Set Object Detection},
+  author    = {Liu, Shilong and Zeng, Zhaoyang and Ren, Tianhe and Li, Feng
+               and Zhang, Hao and Yang, Jie and Li, Chunyuan and Yang, Jianwei
+               and Su, Hang and Zhu, Jun and Zhang, Lei},
+  booktitle = {European Conference on Computer Vision ({ECCV})},
+  year      = {2024}
+}
+
+@inproceedings{Radford2021CLIP,
+  title     = {Learning Transferable Visual Models From Natural Language Supervision},
+  author    = {Radford, Alec and Kim, Jong Wook and Hallacy, Chris and Ramesh, Aditya
+               and Goh, Gabriel and Agarwal, Sandhini and Sastry, Girish and Askell, Amanda
+               and Mishkin, Pamela and Clark, Jack and Krueger, Gretchen and Sutskever, Ilya},
+  booktitle = {Proceedings of the 38th International Conference on Machine Learning ({ICML})},
+  pages     = {8748--8763},
+  year      = {2021}
+}
+
+@article{Johnson2021FAISS,
+  title   = {Billion-Scale Similarity Search with {GPU}s},
+  author  = {Johnson, Jeff and Douze, Matthijs and J{\'e}gou, Herv{\'e}},
+  journal = {{IEEE} Transactions on Big Data},
+  volume  = {7},
+  number  = {3},
+  pages   = {535--547},
+  year    = {2021}
+}
+
+% ---- Fine-tuning and serving --------------------------------
+
+@inproceedings{Hu2022LoRA,
+  title     = {{LoRA}: Low-Rank Adaptation of Large Language Models},
+  author    = {Hu, Edward J. and Shen, Yelong and Wallis, Phillip and Allen-Zhu, Zeyuan
+               and Li, Yuanzhi and Wang, Shean and Wang, Lu and Chen, Weizhu},
+  booktitle = {International Conference on Learning Representations ({ICLR})},
+  year      = {2022}
+}
+
+@misc{msSwift2024,
+  title        = {{ms-Swift}: A Scalable Lightweight Infrastructure for Fine-Tuning
+                 and Inference of Large Language Models},
+  author       = {{ModelScope Community}},
+  howpublished = {\url{https://github.com/modelscope/ms-swift}},
+  year         = {2024}
+}
+
+@inproceedings{Kwon2023vLLM,
+  title     = {Efficient Memory Management for Large Language Model Serving
+               with {PagedAttention}},
+  author    = {Kwon, Woosuk and Li, Zhuohan and Zhuang, Siyuan and Sheng, Ying
+               and Zheng, Lianmin and Yu, Cody Hao and Gonzalez, Joseph E.
+               and Zhang, Hao and Stoica, Ion},
+  booktitle = {Proceedings of the {ACM} {SIGOPS} 29th Symposium on Operating
+               Systems Principles ({SOSP})},
+  year      = {2023}
+}
+
+% ---- Evaluation datasets ------------------------------------
+
+@inproceedings{Hays2008IM2GPS,
+  title     = {{IM2GPS}: Estimating Geographic Information from a Single Image},
+  author    = {Hays, James and Efros, Alexei A.},
+  booktitle = {{IEEE/CVF} Conference on Computer Vision and Pattern Recognition ({CVPR})},
+  pages     = {1--8},
+  year      = {2008}
+}
+
+@inproceedings{Vo2017IM2GPS3K,
+  title     = {Revisiting {IM2GPS} in the Deep Learning Era},
+  author    = {Vo, Nam and Jacobs, Nathan and Hays, James},
+  booktitle = {{IEEE} International Conference on Computer Vision ({ICCV})},
+  year      = {2017}
+}
