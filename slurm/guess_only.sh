@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=navig-guess
-#SBATCH --output=%j_%a.guess.out
-#SBATCH --error=%j_%a.guess.err
+#SBATCH --output=navig-%j_%a.out
+#SBATCH --error=navig-%j_%a.err
 #SBATCH --time=12:00:00
 #SBATCH --account=nexus
 #SBATCH --partition=tron
@@ -17,19 +17,19 @@
 # on top of existing results_s5 evidence from the original NAVIG pipeline.
 #
 # Prerequisites:
-#   1.  Run the original pipeline (script.sh) to produce results_s5.jsonl
-#       in each shard directory.
-#   2.  Merge the sharded s5 files into a single file:
-#           python merge_shards.py \
-#               --base_dir output/im2gps3k_rgb_images \
-#               --num_shards 4 \
-#               --results_file results_s5.jsonl \
-#               --output merged_s5.jsonl
-#   3.  Download the guesser model (one-time, ~22 GB):
-#           huggingface-cli download meta-llama/Llama-3.2-11B-Vision-Instruct \
-#               --local-dir /fs/nexus-scratch/$USER/llama-3.2-11b-vision-instruct
-#   4.  Submit this job:
-#           sbatch script_guess_only.sh
+#   1. Run the original pipeline (slurm/evaluate.sh) to produce results_s5.jsonl
+#      in each shard directory.
+#   2. Merge the sharded s5 files into a single file:
+#          python analysis/merge_shards.py \
+#              --base_dir output/im2gps3k_rgb_images \
+#              --num_shards 4 \
+#              --results_file results_s5.jsonl \
+#              --output merged_s5.jsonl
+#   3. Download the guesser model (one-time, ~22 GB):
+#          huggingface-cli download meta-llama/Llama-3.2-11B-Vision-Instruct \
+#              --local-dir /fs/nexus-scratch/$USER/llama-3.2-11b-vision-instruct
+#   4. Submit this job:
+#          sbatch slurm/guess_only.sh
 # ---------------------------------------------------------------------------
 
 source /nfshomes/srjnk01/miniconda3/etc/profile.d/conda.sh
@@ -50,7 +50,7 @@ S5_FILE=output/test/merged_s5.jsonl
 
 # ── Model selection ─────────────────────────────────────────────────────────
 # Override any of these at submission time:
-#   MODEL=deepseek MODEL_PATH=... RESULTS_NAME=... sbatch script_guess_only.sh
+#   MODEL=deepseek MODEL_PATH=... RESULTS_NAME=... sbatch slurm/guess_only.sh
 #
 # Supported MODEL values: llava, qwen, cpm, cpm_sft, llama32vision, internvl2, deepseek, falcon
 # For cpm_sft, also set: CKPT_DIR=vlms/cpm/checkpoint-534
@@ -67,7 +67,7 @@ if [[ -n "${CKPT_DIR}" ]]; then
     CKPT_ARG="--ckpt_dir ${CKPT_DIR}"
 fi
 
-python3 guess_only.py \
+python3 pipeline/guess_only.py \
     --s5_path      "${S5_FILE}" \
     --dataset_path "${DATASET}" \
     --model        "${MODEL}" \
@@ -78,7 +78,7 @@ python3 guess_only.py \
     --shard_id     ${SHARD_ID}
 
 # After all 4 array tasks complete, merge and score with:
-#   python merge_shards.py \
+#   python analysis/merge_shards.py \
 #       --base_dir output/im2gps3k_rgb_images \
 #       --num_shards 4 \
 #       --results_file ${RESULTS_NAME} \

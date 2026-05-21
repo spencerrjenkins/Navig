@@ -3,25 +3,27 @@
 Generate im2gps3k dataset illustration figures for model_justification.tex.
 
 Produces:
-  figures/fig_dataset_examples.pdf  — 2×3 grid: top=best predictions, bottom=worst
-  figures/fig_dataset_geo.pdf       — bar chart of regional image counts
+  <output_dir>/fig_dataset_examples.pdf  — 2×3 grid: top=best predictions, bottom=worst
+  <output_dir>/fig_dataset_geo.pdf       — bar chart of regional image counts
+
+Usage::
+
+    python figures/make_dataset_figures.py [--output_dir figures/] [--img_dir dataset/im2gps3k_rgb_images/images] [--meta_path dataset/im2gps3k_rgb_images/meta.jsonl]
 """
 
-import json
-import math
+import sys
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+import argparse
+import json
+from collections import Counter
 
 import matplotlib
-
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
-from matplotlib.patches import FancyBboxPatch
 import numpy as np
-
-IMG_DIR = Path("dataset/im2gps3k_rgb_images/images")
-FIG_DIR = Path("figures")
-FIG_DIR.mkdir(exist_ok=True)
 
 OKABE = {
     "blue": "#0072B2",
@@ -85,8 +87,8 @@ WORST = [
 ]
 
 
-def load_image(id_):
-    path = IMG_DIR / f"{id_}.jpg"
+def load_image(img_dir: Path, id_):
+    path = img_dir / f"{id_}.jpg"
     if not path.exists():
         return None
     return mpimg.imread(str(path))
@@ -104,7 +106,7 @@ def fmt_err(km):
 # ---------------------------------------------------------------------------
 # Figure 1: best/worst prediction grid
 # ---------------------------------------------------------------------------
-def make_example_grid():
+def make_example_grid(img_dir: Path, fig_dir: Path):
     fig, axes = plt.subplots(2, 3, figsize=(13, 8.5))
     fig.patch.set_facecolor("#f8f8f8")
 
@@ -116,7 +118,7 @@ def make_example_grid():
     ):
         for col_idx, ex in enumerate(row_examples):
             ax = axes[row_idx][col_idx]
-            img = load_image(ex["id"])
+            img = load_image(img_dir, ex["id"])
             if img is not None:
                 ax.imshow(img)
             ax.set_xticks([])
@@ -127,57 +129,41 @@ def make_example_grid():
                 spine.set_edgecolor(row_col)
                 spine.set_linewidth(3)
 
-            # Title: note
             ax.set_title(
                 ex["note"], fontsize=9.5, fontweight="bold", pad=4, color="#222222"
             )
 
-            # Bottom annotation box
             gt_line = f"GT:   {ex['gt']}"
             pred_line = f"Pred: {ex['pred']}"
             err_color = OKABE["green"] if ex["err"] < 50 else OKABE["vermilion"]
             err_line = f"Error: {err_str}"
 
             ax.text(
-                0.5,
-                -0.01,
+                0.5, -0.01,
                 f"{gt_line}\n{pred_line}",
                 transform=ax.transAxes,
-                fontsize=7.2,
-                ha="center",
-                va="top",
-                color="#333333",
-                fontfamily="monospace",
+                fontsize=7.2, ha="center", va="top",
+                color="#333333", fontfamily="monospace",
             )
             ax.text(
-                0.5,
-                -0.18,
+                0.5, -0.18,
                 err_line,
                 transform=ax.transAxes,
-                fontsize=8.5,
-                ha="center",
-                va="top",
-                color=err_color,
-                fontweight="bold",
+                fontsize=8.5, ha="center", va="top",
+                color=err_color, fontweight="bold",
             )
 
-        # Row label on the left
         axes[row_idx][0].set_ylabel(
-            row_label,
-            fontsize=11,
-            fontweight="bold",
-            color=row_col,
-            labelpad=8,
+            row_label, fontsize=11, fontweight="bold",
+            color=row_col, labelpad=8,
         )
 
     fig.suptitle(
         "im2gps3k benchmark: representative predictions (LLaVA-1.6 full pipeline)",
-        fontsize=12,
-        fontweight="bold",
-        y=1.01,
+        fontsize=12, fontweight="bold", y=1.01,
     )
     fig.subplots_adjust(wspace=0.08, hspace=0.55, bottom=0.08)
-    out = FIG_DIR / "fig_dataset_examples.pdf"
+    out = fig_dir / "fig_dataset_examples.pdf"
     fig.savefig(str(out), bbox_inches="tight", dpi=200, facecolor=fig.get_facecolor())
     plt.close(fig)
     print(f"  Saved {out}")
@@ -187,81 +173,39 @@ def make_example_grid():
 # Figure 2: geographic distribution bar chart
 # ---------------------------------------------------------------------------
 def continent(lat, lon):
-    """
-    Heuristic continent assignment from latitude and longitude.
-
-    Improvements over the previous implementation:
-    - Normalize longitude to [-180, 180] so inputs in 0..360 work.
-    - Use inclusive comparisons to avoid points falling into "Other"
-      when they lie exactly on a boundary.
-    - Check Antarctica first and add an explicit label.
-    - Reorder checks to reduce accidental overlaps.
-
-    Note: This is intentionally simple (bounding boxes). For robust
-    mapping prefer polygon-based continent shapes (e.g., shapely with
-    continent polygons).
-    """
+    """Heuristic continent assignment from latitude and longitude."""
     if lat is None or lon is None:
         return "Other"
 
-    # normalize longitude into [-180, 180]
     lon = ((lon + 180) % 360) - 180
 
-    # Antarctica (approx)
     if lat <= -60:
         return "Antarctica"
-
-    # South America
     if -55 <= lat <= 15 and -82 <= lon <= -34:
         return "S. America"
-
-    # North America
     if 15 <= lat <= 72 and -168 <= lon <= -50:
         return "N. America"
-
-    # Europe
     if 35 <= lat <= 72 and -25 <= lon <= 40:
         return "Europe"
-
-    # Africa
     if -37 <= lat <= 38 and -20 <= lon <= 55:
         return "Africa"
-
-    # Asia (Northern / continental Asia)
     if 20 <= lat <= 77 and 40 <= lon <= 180:
         return "Asia (N)"
-
-    # Oceania / Australasia (heuristic)
     if -50 <= lat <= 10 and 110 <= lon <= 180:
         return "Oceania"
-
     return "Other"
 
 
-def make_geo_bar():
-    with open("dataset/im2gps3k_rgb_images/meta.jsonl") as f:
+def make_geo_bar(meta_path: Path, fig_dir: Path):
+    with open(meta_path) as f:
         meta = [json.loads(l) for l in f]
 
-    from collections import Counter
-
     counts = Counter(continent(r["LAT"], r["LON"]) for r in meta)
-    order = [
-        "Europe",
-        "N. America",
-        "Asia (N)",
-        "Other",
-        "Africa",
-        "S. America",
-        "Oceania",
-    ]
+    order = ["Europe", "N. America", "Asia (N)", "Other",
+             "Africa", "S. America", "Oceania"]
     colors = [
-        OKABE["blue"],
-        OKABE["orange"],
-        OKABE["green"],
-        "#aaaaaa",
-        OKABE["vermilion"],
-        OKABE["pink"],
-        OKABE["skyblue"],
+        OKABE["blue"], OKABE["orange"], OKABE["green"], "#aaaaaa",
+        OKABE["vermilion"], OKABE["pink"], OKABE["skyblue"],
     ]
 
     labels = [f"{k}\n({counts[k]:,})" for k in order]
@@ -270,12 +214,10 @@ def make_geo_bar():
     pcts = [100 * v / total for v in vals]
 
     fig, ax = plt.subplots(figsize=(8, 4))
-    bars = ax.bar(
-        labels, vals, color=colors, edgecolor="white", linewidth=0.8, zorder=3
-    )
+    bars = ax.bar(labels, vals, color=colors, edgecolor="white", linewidth=0.8, zorder=3)
     ax.set_ylabel("Number of images", fontsize=11)
     ax.set_title(
-        "im2gps3k geographic distribution (N = 2,997)", fontsize=12, fontweight="bold"
+        f"im2gps3k geographic distribution (N = {total:,})", fontsize=12, fontweight="bold"
     )
     ax.yaxis.grid(True, linestyle="--", alpha=0.5, zorder=0)
     ax.set_axisbelow(True)
@@ -285,23 +227,41 @@ def make_geo_bar():
             bar.get_x() + bar.get_width() / 2,
             bar.get_height() + 15,
             f"{pct:.1f}%",
-            ha="center",
-            va="bottom",
-            fontsize=9,
-            color="#333333",
+            ha="center", va="bottom", fontsize=9, color="#333333",
         )
 
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     fig.tight_layout()
-    out = FIG_DIR / "fig_dataset_geo.pdf"
+    out = fig_dir / "fig_dataset_geo.pdf"
     fig.savefig(str(out), bbox_inches="tight", dpi=200)
     plt.close(fig)
     print(f"  Saved {out}")
 
 
-if __name__ == "__main__":
-    print("Generating dataset figures →")
-    make_example_grid()
-    make_geo_bar()
+def main():
+    p = argparse.ArgumentParser(description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--output_dir", type=str, default="figures",
+                   help="Directory for output PDFs (default: figures/)")
+    p.add_argument("--img_dir", type=str,
+                   default="dataset/im2gps3k_rgb_images/images",
+                   help="Directory containing {ID}.jpg images")
+    p.add_argument("--meta_path", type=str,
+                   default="dataset/im2gps3k_rgb_images/meta.jsonl",
+                   help="JSONL file with LAT/LON metadata")
+    args = p.parse_args()
+
+    fig_dir = Path(args.output_dir)
+    fig_dir.mkdir(parents=True, exist_ok=True)
+    img_dir = Path(args.img_dir)
+    meta_path = Path(args.meta_path)
+
+    print(f"Generating dataset figures → {fig_dir}/")
+    make_example_grid(img_dir, fig_dir)
+    make_geo_bar(meta_path, fig_dir)
     print("Done.")
+
+
+if __name__ == "__main__":
+    main()

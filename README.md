@@ -15,10 +15,11 @@ Spencer's research fork of the original NAVIG geo-localization project. The goal
 5. [Running the full pipeline](#running-the-full-pipeline)
 6. [Single-image inference](#single-image-inference)
 7. [Stage-6 swap experiment](#stage-6-swap-experiment)
-8. [Comparing results](#comparing-results)
-9. [Evaluation metrics](#evaluation-metrics)
-10. [Customization](#customization)
-11. [Model reference](#model-reference)
+8. [Analyzing and comparing results](#analyzing-and-comparing-results)
+9. [Generating figures](#generating-figures)
+10. [Evaluation metrics](#evaluation-metrics)
+11. [Customization](#customization)
+12. [Model reference](#model-reference)
 
 ---
 
@@ -57,48 +58,59 @@ Stages 1–5 are deterministic given the same model and weights. Stage 6 is the 
 
 ```
 Navig/
-├── evaluation.py          Full 6-stage batch pipeline (main entry point)
-├── inference.py           Single-image demo (stages 1–6 on one file)
-├── guess_only.py          Stage-6 swap experiment runner
-├── compare_results.py     Side-by-side comparison of two result files
-├── merge_shards.py        Merge per-shard JSONL output and compute scores
-├── llm.py                 Model wrappers (LLaVA, Qwen, CPM, Llama32Vision, InternVL2)
-├── prompts.py             All LLM prompt strings
-├── utils.py               Data loading, FAISS retrieval, Nominatim search, JSON parsing
-├── Ablation.py            Ablation study runner
-├── rouge.py               Reasoning-chain quality evaluation (requires OpenAI key)
-├── configuration.py       OpenAI API key (used by rouge.py only)
+├── pipeline/                  Pipeline entry points
+│   ├── evaluation.py          Full 6-stage batch pipeline (main entry point)
+│   ├── inference.py           Single-image demo (stages 1–6 on one file)
+│   ├── guess_only.py          Stage-6 swap experiment runner
+│   └── ablation.py            Ablation study runner
 │
-├── script.sh              SLURM array job — full pipeline, 4 shards
-├── script_guess_only.sh   SLURM array job — stage-6 swap experiment, 4 shards
+├── analysis/                  Post-hoc analysis and comparison tools
+│   ├── analyze_results.py     Detailed breakdown of a single result file
+│   ├── compare_results.py     Side-by-side comparison of two result files
+│   ├── compare_all.py         Multi-model comparison table
+│   ├── merge_shards.py        Merge per-shard JSONL output and compute scores
+│   ├── merge_all_shards.py    Auto-merge all shard groups in a directory
+│   └── rouge.py               Reasoning-chain quality evaluation (ROUGE + GPT-4o)
 │
-├── environment.txt        Full package list snapshot (reference only — use install_env.sh)
-├── install_env.sh         Environment installation helper
+├── figures/                   Publication figure generation
+│   ├── plot_results.py        Nine PDF figures for model_justification.tex
+│   └── make_dataset_figures.py  Dataset illustration figures
 │
-├── dataset/               Evaluation datasets (see Data preparation)
+├── slurm/                     SLURM job scripts for the NEXUS cluster
+│   ├── evaluate.sh            Array job — full pipeline, 4 shards
+│   └── guess_only.sh          Array job — stage-6 swap experiment, 4 shards
+│
+├── llm.py                     Model wrappers (LLaVA, Qwen, CPM, Llama32Vision, InternVL2)
+├── prompts.py                 All LLM prompt strings
+├── utils.py                   Data loading, FAISS retrieval, Nominatim search, JSON parsing
+├── metrics.py                 GeoScore, Haversine distance, threshold accuracy helpers
+├── configuration.py           OpenAI API key loader (reads OPENAI_API_KEY env var)
+│
+├── environment.yml            Conda environment specification
+├── install_env.sh             Environment installation helper (alternative to environment.yml)
+│
+├── dataset/                   Evaluation datasets (see Data preparation)
 │   ├── im2gps3k_rgb_images/
-│   │   ├── meta.jsonl     One record per image: {ID, LAT, LON, [country, city]}
-│   │   └── images/        {ID}.jpg files
+│   │   ├── meta.jsonl         One record per image: {ID, LAT, LON, country, city}
+│   │   └── images/            {ID}.jpg files
 │   └── gws15k/
-├── vlms/                  Local model weight directories
-│   ├── llava/             LLaVA-1.6-Vicuna-7B base weights
-│   ├── NAVIG/             SFT LoRA adapters (checkpoint-534)
-│   ├── qwen/              Qwen2-VL-7B-Instruct weights + adapter
-│   └── cpm/               MiniCPM-V-2.6 weights + adapter
-├── NaviClues/             SFT training dataset
+├── vlms/                      Local model weight directories
+│   ├── llava/                 LLaVA-1.6-Vicuna-7B base weights
+│   ├── NAVIG/                 SFT LoRA adapters (checkpoint-534)
+│   ├── qwen/                  Qwen2-VL-7B-Instruct weights + adapter
+│   └── cpm/                   MiniCPM-V-2.6 weights + adapter
+├── NaviClues/                 SFT training dataset
 │   ├── raw_data.jsonl
 │   ├── filtered_data.jsonl
 │   ├── quality_data.jsonl
-│   ├── filtered_clues.jsonl
-│   ├── quality_clues.jsonl
 │   └── images/
-├── guidebook/             CLIP knowledge base for RAG
+├── guidebook/                 CLIP knowledge base for RAG
 │   ├── faiss_index.index
 │   ├── image_features.npy
 │   ├── image_paths.txt
 │   └── text_descriptions.txt
-├── GroundingDINO/         Object detection submodule
-└── output/                Pipeline results (gitignored)
+├── GroundingDINO/             Object detection submodule
+└── output/                    Pipeline results (gitignored)
     └── im2gps3k_rgb_images/
         ├── shard_0_of_4/
         │   ├── results_s1.jsonl … results_s5.jsonl
@@ -112,35 +124,50 @@ Navig/
 
 **Requirements:** Python 3.10, CUDA 12.1, conda, GCC 11
 
+### Option A — conda environment file (recommended)
+
 ```bash
-# 1. Create an empty conda environment
+conda env create -f environment.yml
+conda activate navig
+```
+
+Then build GroundingDINO from the local source (requires GCC 11 and CUDA 12.1):
+
+```bash
+module load gcc/11.2.0 cuda/12.1.1
+export CUDA_HOME=/opt/common/cuda/cuda-12.1.1
+export TORCH_CUDA_ARCH_LIST="8.6"   # RTX A6000 — adjust for other GPUs
+pip install --no-build-isolation -e GroundingDINO/
+```
+
+### Option B — manual install script
+
+```bash
 conda create -n navig python=3.10 -y
 conda activate navig
-
-# 2. Install all packages (PyTorch, ms-Swift, CLIP, FAISS, vLLM, GroundingDINO)
 bash install_env.sh
 ```
 
-`install_env.sh` handles everything in order:
+`install_env.sh` installs everything in order:
 - `torch==2.4.0+cu121` + matching `torchvision` and `torchaudio`
 - `ms-swift==2.5.0.post1` — model loading and LoRA adapters
 - `transformers==4.45.2`, `peft`, `accelerate`
 - OpenAI CLIP (from GitHub source)
 - `faiss-gpu` (falls back to `faiss-cpu` if the conda channel is unavailable)
 - `vllm==0.5.5` — batch inference acceleration for stages 4–6
-- GroundingDINO built from the local `GroundingDINO/` source (requires GCC 11 and CUDA 12.1)
+- GroundingDINO built from the local `GroundingDINO/` source
 
 The script targets the **RTX A6000 (SM 8.6)** GPU architecture. If you are on a different GPU, edit the `TORCH_CUDA_ARCH_LIST` line in `install_env.sh` before running.
 
-Load the correct modules before each session (or put in your `~/.bashrc`):
+### Session setup
+
+Load the correct modules before each session (or add to `~/.bashrc`):
 
 ```bash
 module unload cuda
 module load cuda/12.1.1
 export CUDA_HOME=/opt/common/cuda/cuda-12.1.1
 ```
-
-**Note:** `environment.txt` is a snapshot of the full package list for reference, but it is not the installation method — use `install_env.sh`.
 
 ---
 
@@ -199,10 +226,10 @@ huggingface-cli download OpenGVLab/InternVL2-8B \
 
 ### Via SLURM (recommended)
 
-`script.sh` submits a 4-shard array job. Edit the `--model_path` and `--ckpt_dir` lines, then:
+`slurm/evaluate.sh` submits a 4-shard array job. Edit the `--model_path` and `--ckpt_dir` lines, then:
 
 ```bash
-sbatch script.sh
+sbatch slurm/evaluate.sh
 ```
 
 Each array task writes to its own directory:
@@ -219,7 +246,7 @@ output/im2gps3k_rgb_images/shard_{0-3}_of_4/
 After all 4 shards finish, merge and score:
 
 ```bash
-python merge_shards.py \
+python analysis/merge_shards.py \
     --base_dir output/im2gps3k_rgb_images \
     --num_shards 4 \
     --results_file results_s6_llava.jsonl \
@@ -229,15 +256,15 @@ python merge_shards.py \
 ### Manually (single shard)
 
 ```bash
-python evaluation.py \
+python pipeline/evaluation.py \
     --model llava \
     --dataset_path dataset/im2gps3k_rgb_images \
-    --reasoning_path output/im2gps3k_rgb_images/shard_0_of_1 \
-    --results_file_Name results_s6_llava.jsonl \
+    --output_path output/im2gps3k_rgb_images/shard_0_of_1 \
+    --results_filename results_s6_llava.jsonl \
     --model_path /fs/nexus-scratch/$USER/llava-v1.6-vicuna-7b-hf \
     --ckpt_dir vlms/NAVIG/llava1_6-vicuna-7b-instruct \
-    --crop_box_treshold 0.3 \
-    --crop_text_treshold 0.25 \
+    --box_threshold 0.3 \
+    --text_threshold 0.25 \
     --use_vllm
 ```
 
@@ -249,10 +276,10 @@ python evaluation.py \
 | `--model_path` | Path to base model weights | — |
 | `--ckpt_dir` | Path to LoRA SFT adapter | — |
 | `--dataset_path` | Root of dataset directory | — |
-| `--reasoning_path` | Output directory (created if absent) | `.` |
-| `--results_file_Name` | Filename for final stage-6 output | `Final_results.jsonl` |
-| `--crop_box_treshold` | GroundingDINO box score threshold (0–1) | `0.65` |
-| `--crop_text_treshold` | GroundingDINO text score threshold (0–1) | `0.55` |
+| `--output_path` | Output directory (created if absent) | `.` |
+| `--results_filename` | Filename for final stage-6 output | `Final_results.jsonl` |
+| `--box_threshold` | GroundingDINO box score threshold (0–1) | `0.65` |
+| `--text_threshold` | GroundingDINO text score threshold (0–1) | `0.55` |
 | `--use_vllm` | Enable vLLM acceleration for stages 4–6 | off |
 | `--num_shards` | Total number of parallel shards | `1` |
 | `--shard_id` | Which shard this process handles (0-indexed) | `0` |
@@ -266,16 +293,16 @@ python evaluation.py \
 For quick testing on a single image without SLURM:
 
 ```bash
-python inference.py \
+python pipeline/inference.py \
     --model qwen \
     --image_path dataset/im2gps3k_rgb_images/images/example.jpg \
     --model_path /fs/nexus-scratch/$USER/Qwen2-VL-7B-Instruct \
     --ckpt_dir vlms/NAVIG/qwen2-vl-7b-instruct \
-    --crop_box_treshold 0.3 \
-    --crop_text_treshold 0.25
+    --box_threshold 0.3 \
+    --text_threshold 0.25
 ```
 
-`inference.py` loads both the base model and SFT adapter simultaneously (higher VRAM than `evaluation.py`, which loads them sequentially). Output is printed to stdout; the final prediction is in `inference.results['answer']`.
+`pipeline/inference.py` loads both the base model and SFT adapter simultaneously (higher VRAM than `pipeline/evaluation.py`, which loads them sequentially). Output is printed to stdout; the final prediction is in `inference.results['answer']`.
 
 ---
 
@@ -285,12 +312,12 @@ This experiment tests whether a stronger guesser model improves final accuracy w
 
 ### Step 1 — Produce stage-5 output (if not already done)
 
-Run `sbatch script.sh` and wait for completion.
+Run `sbatch slurm/evaluate.sh` and wait for completion.
 
 ### Step 2 — Merge the stage-5 shards
 
 ```bash
-python merge_shards.py \
+python analysis/merge_shards.py \
     --base_dir output/im2gps3k_rgb_images \
     --num_shards 4 \
     --results_file results_s5.jsonl \
@@ -307,7 +334,7 @@ huggingface-cli download meta-llama/Llama-3.2-11B-Vision-Instruct \
 ### Step 4 — Submit the guess-only job
 
 ```bash
-sbatch script_guess_only.sh
+sbatch slurm/guess_only.sh
 ```
 
 This runs a 4-shard array job that reads from `merged_s5.jsonl` and writes per-shard output to `output/im2gps3k_rgb_images/guess_shard_{0-3}_of_4/results_s6_llama32.jsonl`.
@@ -315,7 +342,7 @@ This runs a 4-shard array job that reads from `merged_s5.jsonl` and writes per-s
 ### Step 5 — Merge guess-only shards
 
 ```bash
-python merge_shards.py \
+python analysis/merge_shards.py \
     --base_dir output/im2gps3k_rgb_images \
     --num_shards 4 \
     --results_file results_s6_llama32.jsonl \
@@ -326,7 +353,7 @@ python merge_shards.py \
 ### Running manually (no SLURM)
 
 ```bash
-python guess_only.py \
+python pipeline/guess_only.py \
     --s5_path output/im2gps3k_rgb_images/merged_s5.jsonl \
     --dataset_path dataset/im2gps3k_rgb_images \
     --model llama32vision \
@@ -334,16 +361,16 @@ python guess_only.py \
     --output output/im2gps3k_rgb_images/results_s6_llama32.jsonl
 ```
 
-`guess_only.py` also supports `--score_only` to re-score an existing output file without re-running inference:
+`pipeline/guess_only.py` also supports `--score_only` to re-score an existing output file without re-running inference:
 
 ```bash
-python guess_only.py \
+python pipeline/guess_only.py \
     --s5_path ... --dataset_path ... --model llama32vision --model_path ... \
     --output output/.../results_s6_llama32.jsonl \
     --score_only
 ```
 
-**Supported `--model` values for `guess_only.py`:**
+**Supported `--model` values for `pipeline/guess_only.py`:**
 
 | Value | Model | VRAM (fp16) | Notes |
 |---|---|---|---|
@@ -355,10 +382,20 @@ python guess_only.py \
 
 ---
 
-## Comparing results
+## Analyzing and comparing results
+
+### Detailed analysis of one result file
 
 ```bash
-python compare_results.py \
+python analysis/analyze_results.py output/im2gps3k_rgb_images/merged_results_llava.jsonl
+```
+
+Prints per-stage score breakdown, accuracy at all thresholds, country/city match rates, and failure-mode statistics.
+
+### Side-by-side comparison of two result files
+
+```bash
+python analysis/compare_results.py \
     output/im2gps3k_rgb_images/merged_results_llava.jsonl \
     output/im2gps3k_rgb_images/merged_results_llama32.jsonl \
     --label-a "LLaVA-7B (baseline)" \
@@ -375,6 +412,76 @@ Output includes:
 - GeoScore improves ≥ 5% and win rate > 55%: model quality is a real bottleneck; invest in fine-tuning the stronger model on NaviClues.
 - Improvement < 2%: pipeline architecture is the bottleneck; shift focus to iterative agentic tool use.
 - Parse failure rate drops: the stronger model produces more reliable structured JSON output, a secondary benefit for any agentic redesign.
+
+### Multi-model comparison table
+
+```bash
+python analysis/compare_all.py \
+    output/im2gps3k_rgb_images/merged_results_llava.jsonl \
+    output/im2gps3k_rgb_images/merged_results_qwen.jsonl \
+    output/im2gps3k_rgb_images/merged_results_llama32.jsonl \
+    --labels "LLaVA-1.6" "Qwen2-VL" "Llama-3.2"
+```
+
+### Merging shards from multiple model runs at once
+
+```bash
+python analysis/merge_all_shards.py output/im2gps3k_rgb_images/
+```
+
+Automatically detects all `*_N_of_M` directories and merges each group into a `*_merged/` directory.
+
+### Reasoning chain quality evaluation
+
+`analysis/rouge.py` scores the quality of generated reasoning chains against human references using ROUGE and an optional GPT-4o judge:
+
+```bash
+# Set the API key before running quality eval
+export OPENAI_API_KEY="sk-..."
+
+python analysis/rouge.py \
+    --model qwen_sft \
+    --test_path dataset/im2gps3k_rgb_images/meta.jsonl \
+    --ref_path path/to/reference_responses.jsonl \
+    --output_path output/rouge_eval \
+    --quality_eval
+```
+
+---
+
+## Generating figures
+
+Publication-quality figures are generated by scripts in `figures/`. All scripts are run from the project root directory.
+
+### Model performance figures (for model_justification.tex)
+
+```bash
+python figures/plot_results.py [--output_dir figures/]
+```
+
+Produces nine PDF figures:
+
+| File | Content |
+|---|---|
+| `fig1_geoscore.pdf` | Overall GeoScore (all vs. excluding failures) |
+| `fig2_thresholds.pdf` | Accuracy at five distance thresholds |
+| `fig3_distribution.pdf` | Distance-percentile violin + IQR chart |
+| `fig4_evidence.pdf` | Evidence-component GeoScore deltas |
+| `fig5_geographic.pdf` | Geographic GeoScore heatmap |
+| `fig6_cdf.pdf` | Cumulative distance CDF (log x-axis) |
+| `fig7_difficulty.pdf` | Accuracy breakdown by image difficulty tercile |
+| `fig8_agreement.pdf` | Pairwise joint accuracy heatmap |
+| `fig9_failure_modes.pdf` | Prediction outcome decomposition (stacked bar) |
+
+### Dataset illustration figures
+
+```bash
+python figures/make_dataset_figures.py [--output_dir figures/] \
+    [--img_dir dataset/im2gps3k_rgb_images/images] \
+    [--meta_path dataset/im2gps3k_rgb_images/meta.jsonl]
+```
+
+Produces `fig_dataset_examples.pdf` (best/worst prediction grid) and `fig_dataset_geo.pdf` (geographic distribution bar chart).
 
 ---
 
@@ -398,7 +505,7 @@ where `d` is the Haversine distance in km between the prediction and the ground 
 | Country | 750 km | Correct country |
 | Continent | 2500 km | Correct continent |
 
-`evaluation.py` also reports **country match** and **city match** accuracy (string containment).
+`pipeline/evaluation.py` also reports **country match** and **city match** accuracy (string containment). All metric logic lives in `metrics.py` and is shared across pipeline and analysis scripts.
 
 ---
 
@@ -419,7 +526,7 @@ All prompts live in `prompts.py`. The most impactful to modify:
 
 ### GroundingDINO object categories
 
-In `evaluation.py` line 69:
+In `pipeline/evaluation.py`:
 ```python
 ground = PatchImages(['road sign', 'house', 'building sign'])
 ```
@@ -427,24 +534,25 @@ Adding `'storefront'`, `'vehicle'`, or `'license plate'` will feed more crops to
 
 ### RAG distance threshold
 
-In `evaluation.py` and `guess_only.py`, `rag_threshold = 30` controls how close (in km) a retrieved guidebook entry must be to the crop for it to be included in the stage-6 prompt. Lower = fewer but more precise clues.
+In `pipeline/evaluation.py` and `pipeline/guess_only.py`, `rag_threshold=30` controls how close (in km) a retrieved guidebook entry must be to the crop for it to be included in the stage-6 prompt. Lower = fewer but more precise clues. The `build_guess_query()` function in `utils.py` also accepts `include_reasoning`, `include_osm`, `include_rag`, and `include_comment` keyword arguments for ablation studies — see `pipeline/ablation.py` for usage.
 
 ### CLIP model
 
 `utils.py` loads `ViT-B/32` for RAG embeddings. Swapping to `ViT-L/14` improves retrieval quality at the cost of higher VRAM and a required guidebook index rebuild:
 ```python
-# utils.py — change this line
+# utils.py — change this line in _load_clip_resources()
 model, preprocess = clip.load("ViT-L/14", device=device)
 ```
 Then rebuild `guidebook/faiss_index.index` and `guidebook/image_features.npy` by re-embedding all guidebook images.
 
-### Reasoning quality evaluation
+### OpenAI API key (for rouge.py quality eval)
 
-`rouge.py` scores the quality of generated reasoning chains against human references using ROUGE and an OpenAI LLM judge. Requires an OpenAI API key in `configuration.py`:
-```python
-class Config:
-    OPENAI_API_KEY = "sk-..."
+Set the key via environment variable before running `analysis/rouge.py`:
+```bash
+export OPENAI_API_KEY="sk-..."
 ```
+
+`configuration.py` reads this variable at import time. Do not hard-code the key in source files.
 
 ---
 
@@ -463,4 +571,4 @@ class Config:
 
 The SFT adapter for stage 1 is always loaded automatically from `--ckpt_dir`; `--model` selects the base architecture for both the stage-1 adapter and the base model used in stages 4–6.
 
-For `guess_only.py`, `--model` controls only the stage-6 guesser and no SFT adapter is loaded.
+For `pipeline/guess_only.py`, `--model` controls only the stage-6 guesser and no SFT adapter is loaded.

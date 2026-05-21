@@ -10,3 +10,4 @@ output/
 commands.txt
 researcher_guide.md
 vlms/
+configuration.py

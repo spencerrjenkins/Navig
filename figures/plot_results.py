@@ -13,16 +13,18 @@ Produces nine PDF figures for inclusion in model_justification.tex:
   fig8_agreement.pdf        Pairwise joint accuracy heatmap
   fig9_failure_modes.pdf    Prediction outcome decomposition (stacked bar)
 
-Usage:
-    /path/to/navig/python plot_results.py \\
-        [--output_dir figures/]
+Usage::
+
+    python figures/plot_results.py [--output_dir figures/]
 
 All canonical result files are discovered relative to the project root.
 """
 
-import json
-import re
 import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+import json
 import argparse
 import numpy as np
 import matplotlib
@@ -31,9 +33,9 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import matplotlib.ticker as ticker
 import seaborn as sns
-from math import radians, sin, cos, sqrt, atan2
 from collections import defaultdict
-from pathlib import Path
+
+from metrics import geoscore, haversine_distance, parse_coord, THRESHOLDS
 
 # ── Canonical model registry ─────────────────────────────────────────────────
 # (path relative to project root, display label, short label, color, failed?)
@@ -100,24 +102,11 @@ MODELS = [
     },
 ]
 
-THRESHOLDS  = [1, 25, 200, 750, 2500]
 THR_LABELS  = ["1 km\n(street)", "25 km\n(city)", "200 km\n(region)",
                "750 km\n(country)", "2500 km\n(continent)"]
 PENALTY_KM  = 10_000.0   # distance assigned when parse fails
 
 # ── Geo utilities ─────────────────────────────────────────────────────────────
-
-def haversine(c1, c2):
-    lat1, lon1 = map(radians, c1)
-    lat2, lon2 = map(radians, c2)
-    dlat, dlon = lat2 - lat1, lon2 - lon1
-    a = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
-    return 6371 * 2 * atan2(sqrt(a), sqrt(1 - a))
-
-
-def geoscore(d):
-    return 5000 * np.exp(-d / 1492.7)
-
 
 def lat_to_continent(lat, lon):
     if lat > 66.5:
@@ -154,32 +143,13 @@ def load_model(path):
     return rows
 
 
-def _parse_coord(value):
-    """Parse a coordinate that may be a plain float or a model-formatted string
-    such as '8.6836° N', 'Approximately 75° W', or '48.5'. Raises ValueError for
-    unparseable values like 'Unknown' or JSON null (None)."""
-    if value is None:
-        raise ValueError("Unparseable coordinate: None")
-    s = str(value).strip()
-    if s.lower() in ('unknown', 'n/a', '', 'nan', 'null', 'none', 'infinity', 'undefined'):
-        raise ValueError(f"Unparseable coordinate: {s!r}")
-    s = re.sub(r'(?i)approximately\s*', '', s).strip()
-    m = re.match(r'^(-?\d+(?:\.\d+)?)\s*°?\s*([NSEWnsew])?$', s)
-    if m:
-        val = float(m.group(1))
-        if (m.group(2) or '').upper() in ('S', 'W'):
-            val = -val
-        return val
-    return float(s)
-
-
 def get_dist(row):
     """Return (distance_km, is_failure)."""
     correct = [float(row["LAT"]), float(row["LON"])]
     try:
         ans = row["answer"]
-        pred = [_parse_coord(ans["latitude"]), _parse_coord(ans["longitude"])]
-        return haversine(pred, correct), False
+        pred = [parse_coord(ans["latitude"]), parse_coord(ans["longitude"])]
+        return haversine_distance(pred, correct), False
     except Exception:
         return PENALTY_KM, True
 
@@ -238,7 +208,7 @@ def compute_evidence_deltas(rows):
 
 
 def compute_geographic(rows):
-    """Return {continent: [dist, ...]} for working predictions."""
+    """Return {continent: mean_geoscore} for all predictions."""
     geo = defaultdict(list)
     for row in rows.values():
         d, _ = get_dist(row)
@@ -319,7 +289,6 @@ def fig1_geoscore(data, out_dir):
     ax.set_yticks(range(0, 3801, 500))
     ax.axhline(y=0, color="black", linewidth=0.5)
 
-    # Custom legend
     patch_all  = mpatches.Patch(facecolor="grey", alpha=0.85, label="All predictions")
     patch_excl = mpatches.Patch(facecolor="grey", alpha=0.45, hatch="///",
                                 label="Excluding parse failures")
@@ -346,7 +315,6 @@ def fig2_thresholds(data, out_dir):
                 linewidth=1.8, markersize=6,
                 label=m["cfg"]["short"].replace("\n", " "),
                 zorder=3)
-        # Annotate last point
         ax.annotate(f'{accs[-1]:.1f}%',
                     xy=(len(THRESHOLDS) - 1, accs[-1]),
                     xytext=(3, 0), textcoords="offset points",
@@ -372,11 +340,9 @@ def fig2_thresholds(data, out_dir):
 def fig3_distribution(data, out_dir):
     working = [m for m in data if not m["cfg"]["failed"]]
 
-    # Build synthetic box data from actual distances for violin
     fig, axes = plt.subplots(1, 2, figsize=(7, 3.6), layout="constrained",
                              gridspec_kw={"wspace": 0.35})
 
-    # Left: true violin (log scale) of all distances including failures
     ax = axes[0]
     all_dists = [m["stats"]["dists"] for m in working]
     parts = ax.violinplot(all_dists, positions=range(len(working)),
@@ -399,7 +365,6 @@ def fig3_distribution(data, out_dir):
             fontsize=6.5, color="red", ha="right", va="bottom")
     ax.set_title("(a) Full distribution (incl. failures)")
 
-    # Right: percentile bars of successful predictions only
     ax2 = axes[1]
     labels = [m["cfg"]["short"] for m in working]
     x = np.arange(len(working))
@@ -407,7 +372,6 @@ def fig3_distribution(data, out_dir):
     p50 = [m["stats"]["p50"] for m in working]
     p75 = [m["stats"]["p75"] for m in working]
 
-    # Draw IQR bars + median marker
     bar_w = 0.5
     for i, m in enumerate(working):
         ax2.bar(i, p75[i], bar_w, bottom=p25[i],
@@ -470,7 +434,6 @@ def fig4_evidence(data, out_dir):
     ax.set_xlabel("Evidence component")
     ax.legend(loc="upper right", ncol=2, framealpha=0.9)
 
-    # Shade interpretation zones
     ax.axhspan(-50, 0,   alpha=0.04, color="red",   zorder=0)
     ax.axhspan(0,   200, alpha=0.04, color="green",  zorder=0)
 
@@ -486,12 +449,10 @@ def fig4_evidence(data, out_dir):
 def fig5_geographic(data, out_dir):
     working = [m for m in data if not m["cfg"]["failed"]]
 
-    # Get continent sizes from first model's rows
     cont_counts = defaultdict(int)
     for row in working[0]["rows"].values():
         cont_counts[lat_to_continent(float(row["LAT"]), float(row["LON"]))] += 1
 
-    # Order by count descending, drop tiny or extreme regions
     keep = ["Europe", "N. America", "Asia (N)", "Africa",
             "S. America", "Oceania", "Asia (S/SE)"]
     conts = [c for c in keep if cont_counts[c] > 0]
@@ -518,7 +479,6 @@ def fig5_geographic(data, out_dir):
     ax.set_xlabel("Model")
     ax.set_ylabel("Region")
 
-    # Annotate cells
     for i in range(len(conts)):
         for j in range(len(working)):
             v = matrix[i, j]
@@ -574,13 +534,11 @@ def fig6_cdf(data, out_dir):
         cdf = np.searchsorted(dists_sorted, x_grid, side="right") / len(dists_sorted) * 100
         ax.plot(x_grid, cdf, color=m["cfg"]["color"], linewidth=2,
                 label=m["cfg"]["short"].replace("\n", " "))
-        # Mark the 50th and 75th percentile tick
         for pct in (50, 75):
             d_pct = np.percentile(dists_sorted, pct)
             y_pct = np.interp(d_pct, x_grid, cdf)
             ax.plot(d_pct, y_pct, mk, color=m["cfg"]["color"], markersize=5, zorder=4)
 
-    # Threshold vertical guides
     for t, lbl in zip(THRESHOLDS, THR_LABELS):
         ax.axvline(t, color="gray", linestyle="--", linewidth=0.7, alpha=0.65, zorder=1)
         ax.text(t * 1.12, 3, lbl.split("\n")[0], fontsize=6, color="gray",
@@ -612,13 +570,11 @@ def fig7_difficulty(data, out_dir):
     """
     working = [m for m in data if not m["cfg"]["failed"]]
 
-    # Images present in every working model
     common_ids = set.intersection(*[set(m["rows"].keys()) for m in working])
     if len(common_ids) < 30:
         print("  fig7: insufficient common IDs, skipping")
         return
 
-    # Mean distance per image across models
     mean_dist = {}
     for id_ in common_ids:
         mean_dist[id_] = np.mean([get_dist(m["rows"][id_])[0] for m in working])
@@ -631,7 +587,7 @@ def fig7_difficulty(data, out_dir):
         "Hard\n(worst ⅓)":  set(sorted_ids[2 * n // 3:]),
     }
 
-    THR_SHOW = [25, 200, 750]  # thresholds to display
+    THR_SHOW = [25, 200, 750]
     bucket_keys = list(buckets.keys())
     n_b = len(bucket_keys)
     n_m = len(working)
@@ -692,7 +648,6 @@ def fig8_agreement(data, out_dir):
             ]) * 100
             matrix[i, j] = joint
 
-    # Show lower triangle only (mask upper)
     mask = np.triu(np.ones((n, n), dtype=bool), k=1)
     matrix_disp = np.where(mask, np.nan, matrix)
 
@@ -705,7 +660,6 @@ def fig8_agreement(data, out_dir):
     ax.set_yticklabels(labels, fontsize=8)
     ax.set_title(f"Joint accuracy @{T} km (%)", fontsize=10)
 
-    # Annotate cells
     for i in range(n):
         for j in range(n):
             if not mask[i, j] and not np.isnan(matrix_disp[i, j]):
@@ -743,7 +697,6 @@ def fig9_failure_modes(data, out_dir):
     for key, color, label in zip(cat_keys, cat_colors, cat_labels):
         fracs = [m["fail_modes"][key] / m["stats"]["n"] * 100 for m in working]
         bars = ax.bar(x, fracs, bottom=bottoms, color=color, label=label, zorder=3)
-        # Annotate if segment is large enough
         for xi, (frac, bot) in enumerate(zip(fracs, bottoms)):
             if frac >= 5:
                 ax.text(xi, bot + frac / 2, f"{frac:.0f}%",

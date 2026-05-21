@@ -1,8 +1,7 @@
 #!/bin/bash
-
 #SBATCH --job-name=navig-eval
-#SBATCH --output=%j.test.out
-#SBATCH --error=%j.test.err
+#SBATCH --output=navig-%j_%a.out
+#SBATCH --error=navig-%j_%a.err
 #SBATCH --time=12:00:00
 #SBATCH --account=nexus
 #SBATCH --partition=tron
@@ -30,16 +29,15 @@ NUM_SHARDS=4
 SHARD_ID=${SLURM_ARRAY_TASK_ID}
 SHARD_OUTPUT=output/im2gps3k_rgb_images/qwen_shard_${SHARD_ID}_of_${NUM_SHARDS}
 
-python3 evaluation.py \
+python3 pipeline/evaluation.py \
     --model "qwen" \
     --dataset_path dataset/im2gps3k_rgb_images \
-    --reasoning_path ${SHARD_OUTPUT} \
-    --results_file_Name "results_s6_qwen.jsonl" \
-    --crop_box_treshold 0.3 \
-    --crop_text_treshold 0.25 \
+    --output_path ${SHARD_OUTPUT} \
+    --results_filename "results_s6_qwen.jsonl" \
+    --box_threshold 0.3 \
+    --text_threshold 0.25 \
     --model_path /fs/nexus-scratch/srjnk01/Qwen2.5-VL-7B-Instruct \
     --ckpt_dir vlms/NAVIG/qwen2-vl-7b-instruct \
     --num_shards ${NUM_SHARDS} \
     --shard_id ${SHARD_ID} \
     --use_vllm
-

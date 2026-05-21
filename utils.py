@@ -1,39 +1,103 @@
+"""Shared utilities for the NAVIG geo-localization pipeline.
+
+Covers: JSONL I/O, JSON parsing, CLIP-based RAG retrieval, GroundingDINO
+patching, Nominatim geocoding, and stage-6 query construction.
+"""
+
 import json
-import requests
-import torch
-import clip
-from PIL import Image
-import numpy as np
+import logging
+import math
 import re
 import time
-import math
-from retry import retry
-import faiss
-
-import os
-from groundingdino.util.inference import load_model, load_image, predict, annotate
-import torch
-from torchvision.ops import box_convert
 from collections import defaultdict
+from pathlib import Path
+
 import cv2
+import faiss
+import numpy as np
+import requests
+import torch
+from PIL import Image
+from retry import retry
+from torchvision.ops import box_convert
+
+from groundingdino.util.inference import annotate, load_image, load_model, predict
 from prompts import osm_gen
-osm_gen_list = osm_gen.lower().split()
+import prompts
+
+logger = logging.getLogger(__name__)
+
+# Words that appear in the OSM extraction prompt itself — filter these out so
+# the model's own instructions are not accidentally sent to Nominatim.
+_OSM_PROMPT_WORDS: frozenset[str] = frozenset(osm_gen.lower().split())
+
+# Paths anchored to the project root (same directory as this file).
+_ROOT = Path(__file__).parent
+_GUIDEBOOK_DIR = _ROOT / "guidebook"
+_GROUNDING_DINO_CONFIG = (
+    _ROOT / "GroundingDINO" / "groundingdino" / "config" / "GroundingDINO_SwinT_OGC.py"
+)
+_GROUNDING_DINO_WEIGHTS = (
+    _ROOT / "GroundingDINO" / "weights" / "groundingdino_swint_ogc.pth"
+)
+
+# ── CLIP module-level cache ────────────────────────────────────────────────────
+# Loaded once on first call to retrieve_similar_images; reused for every
+# subsequent call so the model is not re-read from disk per image.
+_clip_model = None
+_clip_preprocess = None
+_clip_image_features: np.ndarray | None = None
+_clip_index = None
+_clip_text_descriptions: list[str] | None = None
+_clip_image_paths: list[str] | None = None
 
 
-def load_data(path):
-    with open(path, "r", encoding="utf-8") as f:
-        data = [json.loads(line) for line in f]
-    return data
+def _load_clip_resources() -> None:
+    """Initialise CLIP model and guidebook resources exactly once."""
+    global _clip_model, _clip_preprocess, _clip_image_features
+    global _clip_index, _clip_text_descriptions, _clip_image_paths
+
+    if _clip_model is not None:
+        return  # already loaded
+
+    import clip  # imported here so non-RAG code paths don't require CLIP
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    logger.info("Loading CLIP ViT-B/32 and guidebook index...")
+    _clip_model, _clip_preprocess = clip.load("ViT-B/32", device=device)
+    _clip_image_features = np.load(str(_GUIDEBOOK_DIR / "image_features.npy"))
+    _clip_index = faiss.read_index(str(_GUIDEBOOK_DIR / "faiss_index.index"))
+
+    with open(_GUIDEBOOK_DIR / "text_descriptions.txt", encoding="utf-8") as f:
+        _clip_text_descriptions = [line.strip() for line in f]
+    with open(_GUIDEBOOK_DIR / "image_paths.txt", encoding="utf-8") as f:
+        _clip_image_paths = [line.strip() for line in f]
+
+    logger.info("CLIP and guidebook loaded.")
 
 
-def dump_jsonl(objects, file_name):
-    out_file = open(file_name, "w", encoding="utf-8")
-    for obj in objects:
-        tmp = out_file.write(json.dumps(obj, ensure_ascii=False) + "\n")
-        out_file.flush()
+# ── JSONL I/O ─────────────────────────────────────────────────────────────────
+
+def load_data(path: str) -> list[dict]:
+    with open(path, encoding="utf-8") as f:
+        return [json.loads(line) for line in f]
 
 
-def _parse_osm_candidates(query):
+def dump_jsonl(objects, file_name: str) -> None:
+    with open(file_name, "w", encoding="utf-8") as out_file:
+        for obj in objects:
+            out_file.write(json.dumps(obj, ensure_ascii=False) + "\n")
+            out_file.flush()
+
+
+# ── OSM candidate parsing ──────────────────────────────────────────────────────
+
+def _parse_osm_candidates(query) -> list[str]:
+    """Extract location-string candidates from a VLM response.
+
+    Handles: JSON arrays, markdown-fenced arrays, raw strings, and Python lists.
+    Returns a deduplicated list of non-empty, non-'None' strings.
+    """
     if query is None:
         return []
     if isinstance(query, list):
@@ -76,39 +140,45 @@ def _parse_osm_candidates(query):
     return normalized
 
 
+# ── Nominatim geocoding ────────────────────────────────────────────────────────
+
 @retry(tries=3, delay=10)
-def search_place_nominatim(query: str, top_k=3):
-    print("Querying...", query)
-    headers = {"User-Agent": "UMIACS/NAVIG_1.1.0"}
+def search_place_nominatim(query: str, top_k: int = 3) -> list[dict] | None:
+    """Query Nominatim for each candidate in *query* and return deduplicated results.
+
+    The User-Agent includes a contact address per Nominatim's usage policy:
+    https://operations.osmfoundation.org/policies/nominatim/
+    """
+    headers = {
+        "User-Agent": "UMIACS/NAVIG_1.1.0 (contact: kinsey.long@berkeley.edu)"
+    }
     candidates = _parse_osm_candidates(query)
     if not candidates:
         return None
 
     url = "https://nominatim.openstreetmap.org/search"
-    all_results = []
+    all_results: list[dict] = []
     for candidate in candidates:
-        if candidate in osm_gen_list:
+        if candidate.lower() in _OSM_PROMPT_WORDS:
             continue
         params = {"q": candidate, "format": "json", "limit": top_k}
-        print("Sending query...", candidate)
+        logger.debug("Nominatim query: %r", candidate)
         response = requests.get(url, params=params, headers=headers)
         if response.status_code == 429:
-            print("429 Too Many Requests — sleeping 60s before retry")
+            logger.warning("Nominatim 429 Too Many Requests — sleeping 60 s before retry")
             time.sleep(60)
             raise Exception("429 Too Many Requests")
         response.raise_for_status()
-        print("Response received: ", response)
-        print(response.text)
-        time.sleep(2)  # Respect server rate limit
+        logger.debug("Nominatim response status: %s", response.status_code)
+        time.sleep(2)  # respect Nominatim rate limit (1 req/s)
         try:
             content = response.json()
         except Exception:
-            print("Error decoding JSON:", response.text)
+            logger.warning("Failed to decode Nominatim JSON for query %r", candidate)
             continue
         if not content:
             continue
-
-        content = [
+        all_results.extend(
             {
                 "place_name": item.get("name", "N/A"),
                 "location": item["display_name"],
@@ -116,222 +186,269 @@ def search_place_nominatim(query: str, top_k=3):
                 "lon": item["lon"],
             }
             for item in content[:top_k]
-        ]
-        all_results.extend(content)
+        )
 
     if not all_results:
         return None
-    seen = set()
-    unique_results = []
+
+    seen: set[tuple] = set()
+    unique: list[dict] = []
     for item in all_results:
-        key = (
-            item.get("place_name"),
-            item.get("location"),
-            item.get("lat"),
-            item.get("lon"),
-        )
-        if key in seen:
-            continue
-        seen.add(key)
-        unique_results.append(item)
-    return unique_results
+        key = (item.get("place_name"), item.get("location"), item.get("lat"), item.get("lon"))
+        if key not in seen:
+            seen.add(key)
+            unique.append(item)
+    return unique
 
 
-def search_place_with_retry(query: str, top_k=3):
+def search_place_with_retry(query: str, top_k: int = 3) -> list[dict] | None:
     try:
         return search_place_nominatim(query, top_k)
     except Exception as e:
-        print(f"All retries failed: {e}")
+        logger.warning("All Nominatim retries failed: %s", e)
         return None
 
 
-def retrieve_similar_images(input_image_path, k=5, threshold=30):
+# ── CLIP-based RAG retrieval ──────────────────────────────────────────────────
+
+def retrieve_similar_images(
+    input_image_path: str, k: int = 5, threshold: float = 30.0
+) -> tuple[list[str], list[str], list[float]]:
+    """Return (image_paths, text_clues, distances) for guidebook entries similar
+    to *input_image_path*.
+
+    The CLIP model and FAISS index are loaded once and cached for the lifetime
+    of the process.  *threshold* is a FAISS L2 distance cutoff; entries farther
+    than this are excluded.
+    """
+    _load_clip_resources()
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    model, preprocess = clip.load("ViT-B/32", device=device)
-
-    image_features_array = np.load("guidebook/image_features.npy")
-    index = faiss.read_index("guidebook/faiss_index.index")
-
-    with open("guidebook/text_descriptions.txt", "r", encoding="utf-8") as f:
-        text_descriptions = [line.strip() for line in f.readlines()]
-
-    with open("guidebook/image_paths.txt", "r", encoding="utf-8") as f:
-        image_paths = [line.strip() for line in f.readlines()]
-    input_image = preprocess(Image.open(input_image_path)).unsqueeze(0).to(device)
+    img = _clip_preprocess(Image.open(input_image_path)).unsqueeze(0).to(device)
     with torch.no_grad():
-        input_image_features = model.encode_image(input_image).cpu().numpy()
-    input_image_features = input_image_features.astype("float32")
-    distances, indices = index.search(input_image_features, k)
+        features = _clip_model.encode_image(img).cpu().numpy().astype("float32")
 
-    filtered_similar_texts = []
-    filtered_similar_images = []
-    filtered_distances = []
+    distances, indices = _clip_index.search(features, k)
 
-    for i, distance in enumerate(distances[0]):
-        if threshold is None or distance < threshold:
-            filtered_similar_texts.append(text_descriptions[indices[0][i]])
-            filtered_similar_images.append(image_paths[indices[0][i]])
-            filtered_distances.append(float(distance))
+    sim_texts, sim_images, sim_dists = [], [], []
+    for dist, idx in zip(distances[0], indices[0]):
+        if threshold is None or dist < threshold:
+            sim_texts.append(_clip_text_descriptions[idx])
+            sim_images.append(_clip_image_paths[idx])
+            sim_dists.append(float(dist))
 
-    if not filtered_similar_images:
-        return [], [], []
-    # print(filtered_similar_images, filtered_similar_texts, filtered_distances)
-    return filtered_similar_images, filtered_similar_texts, filtered_distances
+    return sim_images, sim_texts, sim_dists
 
 
-def parse_guess(guess):
-    pattern = r"\(([^)]+),\s*([^)]+)\)"
-    match = re.search(pattern, guess)
-    if match:
-        return [float(match.group(1)), float(match.group(2))]
-    else:
-        raise ValueError("The answer is not in the correct format.")
+# ── JSON parsing ───────────────────────────────────────────────────────────────
+
+_NAN_LITERAL_RE = re.compile(
+    r"\b(NaN|Infinity|-Infinity|undefined|None|Unknown|unknown)\b"
+)
 
 
-_NAN_LITERAL_RE = re.compile(r'\b(NaN|Infinity|-Infinity|undefined|None|Unknown|unknown)\b')
-
-
-def parse_json_part(guess):
+def parse_json_part(guess: str) -> dict | None:
+    """Attempt to parse *guess* as a JSON object, applying a cascade of fixes
+    for common model output defects."""
     if guess is None:
         return None
     if guess.startswith("```json"):
         guess = guess[7:].strip()
     if guess.endswith("```"):
         guess = guess[:-3].strip()
-    # Pre-process: replace bare JS/Python non-JSON literals with null so that
-    # json.loads can proceed (models sometimes emit NaN or None as coord values).
-    guess = _NAN_LITERAL_RE.sub('null', guess)
+    # Replace bare JS/Python non-JSON literals with null.
+    guess = _NAN_LITERAL_RE.sub("null", guess)
     try:
         return json.loads(guess)
     except json.JSONDecodeError as e:
-        error_message = str(e)
-        print(f"Error: {error_message}")
-        # Fix 1: strip spurious trailing quote on numeric values
-        fixed = re.sub(r'(":\s*)(-?\d+\.?\d*)"', r"\1\2", guess)
-        try:
-            return json.loads(fixed)
-        except json.JSONDecodeError:
-            pass
-        # Fix 2a: insert missing commas in multi-line JSON (value then newline then key)
-        fixed = re.sub(r'([0-9"])\s*\n(\s*"[^"]+"\s*:)', r'\1,\n\2', fixed)
-        # Fix 2b: insert missing commas in compact single-line JSON (value then optional space then key)
-        fixed = re.sub(r'([0-9"])\s*("(?:[^"\\]|\\.)*"\s*:)', r'\1,\2', fixed)
-        try:
-            return json.loads(fixed)
-        except json.JSONDecodeError:
-            pass
-        # Fix 3: strip trailing commas before closing brace (apply on top of Fix 1+2)
-        fixed = re.sub(r",(\s*})", r"\1", fixed)
-        try:
-            return json.loads(fixed)
-        except json.JSONDecodeError as e:
-            print(f"Again Error: {e}")
-            return None
+        logger.debug("JSON parse error: %s", e)
+
+    # Fix 1: strip spurious trailing quote on numeric values.
+    fixed = re.sub(r'(":\s*)(-?\d+\.?\d*)"', r"\1\2", guess)
+    try:
+        return json.loads(fixed)
+    except json.JSONDecodeError:
+        pass
+
+    # Fix 2a: insert missing commas in multi-line JSON.
+    fixed = re.sub(r'([0-9"])\s*\n(\s*"[^"]+"\s*:)', r"\1,\n\2", fixed)
+    # Fix 2b: insert missing commas in compact single-line JSON.
+    fixed = re.sub(r'([0-9"])\s*("(?:[^"\\]|\\.)*"\s*:)', r"\1,\2", fixed)
+    try:
+        return json.loads(fixed)
+    except json.JSONDecodeError:
+        pass
+
+    # Fix 3: strip trailing commas before closing brace.
+    fixed = re.sub(r",(\s*})", r"\1", fixed)
+    try:
+        return json.loads(fixed)
+    except json.JSONDecodeError as e:
+        logger.debug("JSON parse still failing after fixes: %s", e)
+        return None
 
 
-def parse_json(guess):
-    # Scan all '{' positions right-to-left so that preamble reasoning text is
-    # skipped and the final JSON answer (which models emit last) is tried first.
-    # Properly tracks brace depth so nested structures are captured whole.
-    for start in sorted([m.start() for m in re.finditer(r'\{', guess)], reverse=True):
+def parse_json(guess: str) -> dict | None:
+    """Extract the last well-formed JSON object from *guess*.
+
+    Scans brace positions right-to-left so that preamble reasoning text is
+    skipped and the final JSON answer (which models emit last) is tried first.
+    """
+    for start in sorted([m.start() for m in re.finditer(r"\{", guess)], reverse=True):
         depth = 0
         for i, ch in enumerate(guess[start:]):
-            if ch == '{':
+            if ch == "{":
                 depth += 1
-            elif ch == '}':
+            elif ch == "}":
                 depth -= 1
                 if depth == 0:
-                    result = parse_json_part(guess[start:start + i + 1])
+                    result = parse_json_part(guess[start : start + i + 1])
                     if result is not None:
                         return result
                     break
     return None
 
 
-def haversine_distance(guess, answer):
-    """
-    guess and answer are both:
-    [lat, lng]
-    """
-    lat1, lon1 = guess
-    lat2, lon2 = answer
-    R = 6371
-    dlat = math.radians(lat2 - lat1)
-    dlon = math.radians(lon2 - lon1)
-    a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(
-        math.radians(lat2)
-    ) * (math.sin(dlon / 2) ** 2)
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-    distance = R * c
-    return distance
+# ── Stage-6 query construction ─────────────────────────────────────────────────
 
+def build_guess_query(
+    row: dict,
+    *,
+    rag_threshold: float = 30.0,
+    include_reasoning: bool = True,
+    include_osm: bool = True,
+    include_rag: bool = True,
+    include_comment: bool = True,
+) -> tuple[str, dict]:
+    """Construct the stage-6 prompt from a result row's accumulated evidence.
+
+    Optional keyword arguments allow individual evidence components to be
+    suppressed (used by the ablation study).
+
+    Returns (query_string, usage_dict).
+    """
+    reason = row.get("image_reason", "")
+    osm_results = row.get("osm", None)
+    comment = row.get("comment", {})
+    rag = row.get("retrieved_content", {})
+
+    rag_formed = ""
+    for rag_key, rag_items in rag.items():
+        if not rag_items:
+            continue
+        valid = [item for item in rag_items if item["distance"] <= rag_threshold]
+        if not valid:
+            continue
+        clues = " ".join(set(item["relevant_clue"] for item in valid))
+        rag_formed += f"the relevant clues of {rag_key} in this image are: {clues}"
+
+    comment_formed = ""
+    for category, text in comment.items():
+        if text:
+            comment_formed += f"{category}: {text}\n"
+
+    filtered_query = {
+        k: [v for v in vals if v != "None"]
+        for k, vals in row.get("genQuery", {}).items()
+    }
+    filtered_query = {k: v for k, v in filtered_query.items() if v}
+
+    k_reason = 1 if include_reasoning else 0
+    k_osm = (1 if osm_results else 0) if include_osm else 0
+    k_rag = (1 if rag_formed else 0) if include_rag else 0
+    k_comment = (1 if comment_formed else 0) if include_comment else 0
+
+    query = prompts.base_query + prompts.intro_query
+    query += prompts.reason_query_template.format(reason=reason) * k_reason
+    if k_osm:
+        query += prompts.osm_query_template.format(
+            filtered_Query=filtered_query, osm_results=osm_results
+        )
+    if k_comment:
+        query += prompts.comment_query_template.format(comment_formed=comment_formed)
+    if k_rag:
+        query += prompts.rag_query_template.format(rag_formed=rag_formed)
+    if k_reason:
+        query += prompts.outro_query
+
+    usage = {
+        "reasoning": k_reason,
+        "osm": k_osm,
+        "rag": k_rag,
+        "comment": k_comment,
+    }
+    return query, usage
+
+
+# ── GroundingDINO patch extraction ────────────────────────────────────────────
 
 class PatchImages:
+    """Detect and crop geo-relevant objects from an image using GroundingDINO."""
+
+    # Minimum patch size: skip crops where either dimension is below this value.
+    # Crops smaller than this in any axis lack enough detail for VLM reasoning.
+    MIN_PATCH_PX: int = 224
+
     def __init__(
-        self, geo_objects: list, groundingDinoConfigPath=None, WeightsPath=None
+        self,
+        geo_objects: list[str],
+        grounding_dino_config_path: str | None = None,
+        weights_path: str | None = None,
     ):
         self.geo_objects = geo_objects
-        if groundingDinoConfigPath is None:
-            CONFIG_PATH = os.path.join(
-                os.getcwd(),
-                "GroundingDINO/groundingdino/config/GroundingDINO_SwinT_OGC.py",
-            )
-        else:
-            CONFIG_PATH = os.path.join(os.getcwd(), groundingDinoConfigPath)
-
-        if WeightsPath is None:
-            WEIGHTS_PATH = os.path.join(
-                os.getcwd(), "GroundingDINO", "weights", "groundingdino_swint_ogc.pth"
-            )
-        else:
-            WEIGHTS_PATH = os.path.join(os.getcwd(), WeightsPath)
-
-        self.model = load_model(CONFIG_PATH, WEIGHTS_PATH)
-        self.saveImgs = defaultdict(list)
+        config = (
+            Path(grounding_dino_config_path)
+            if grounding_dino_config_path
+            else _GROUNDING_DINO_CONFIG
+        )
+        weights = (
+            Path(weights_path) if weights_path else _GROUNDING_DINO_WEIGHTS
+        )
+        self.model = load_model(str(config), str(weights))
 
     def __call__(
-        self, image_path: str, BOX_TRESHOLD: float = 0.3, TEXT_TRESHOLD: float = 0.25
-    ) -> dict:
+        self, image_path: str, box_threshold: float = 0.3, text_threshold: float = 0.25
+    ) -> dict[str, list[np.ndarray]]:
+        """Detect *geo_objects* in *image_path* and return cropped numpy arrays.
+
+        Patches where either width or height is below MIN_PATCH_PX are discarded.
         """
-        Input: Picture, list of geo-objects(string)
-        Output: list of image patches
-        """
-        image_patches = {}
+        image_patches: dict[str, list[np.ndarray]] = {}
         for geo_object in self.geo_objects:
-            TEXT_PROMPT = geo_object
             image_patches[geo_object] = []
             image_source, image = load_image(image_path)
             boxes, logits, phrases = predict(
                 model=self.model,
                 image=image,
-                caption=TEXT_PROMPT,
-                box_threshold=BOX_TRESHOLD,
-                text_threshold=TEXT_TRESHOLD,
+                caption=geo_object,
+                box_threshold=box_threshold,
+                text_threshold=text_threshold,
             )
-            annotated_frame = annotate(
-                image_source=image_source, boxes=boxes, logits=logits, phrases=phrases
-            )
-            self.saveImgs[geo_object].append(annotated_frame)
             h, w, _ = image_source.shape
-            boxes = boxes * torch.Tensor([w, h, w, h])
-            xyxy = box_convert(boxes=boxes, in_fmt="cxcywh", out_fmt="xyxy").numpy()
-            for i in range(len(xyxy)):
-                x1, y1, x2, y2 = xyxy[i]
-                if abs(x2 - x1) < 224 and abs(y2 - y1) < 224:
+            boxes_px = boxes * torch.Tensor([w, h, w, h])
+            xyxy = box_convert(boxes=boxes_px, in_fmt="cxcywh", out_fmt="xyxy").numpy()
+            for x1, y1, x2, y2 in xyxy:
+                if abs(x2 - x1) < self.MIN_PATCH_PX or abs(y2 - y1) < self.MIN_PATCH_PX:
                     continue
                 image_patches[geo_object].append(
                     image_source[int(y1) : int(y2), int(x1) : int(x2)]
                 )
-
         return image_patches
 
-    def save_annotation(self, output_path: str):
-        """
-        Input: list of image patches: category->list of image patches
-        Output: save the patches
-        """
-        if not os.path.exists(output_path):
-            os.makedirs(output_path, exist_ok=True)
+    def save_annotation(self, image_path: str, output_path: str) -> None:
+        """Detect objects and save annotated visualisations to *output_path*."""
+        image_source, image = load_image(image_path)
+        output_path = Path(output_path)
+        output_path.mkdir(parents=True, exist_ok=True)
         for geo_object in self.geo_objects:
-            for i, img in enumerate(self.saveImgs[geo_object]):
-                cv2.imwrite(os.path.join(output_path, f"{geo_object}_{i}.jpg"), img)
+            boxes, logits, phrases = predict(
+                model=self.model,
+                image=image,
+                caption=geo_object,
+                box_threshold=0.3,
+                text_threshold=0.25,
+            )
+            annotated = annotate(
+                image_source=image_source, boxes=boxes, logits=logits, phrases=phrases
+            )
+            cv2.imwrite(str(output_path / f"{geo_object}.jpg"), annotated)

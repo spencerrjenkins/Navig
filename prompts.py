@@ -26,7 +26,7 @@ rag_query_template = "### GUIDEBOOK KNOWLEDGE ###: some details in this image is
 comment_query_template = """### DETAILS REASONING ###: Based on some detailed objects in the image, some experts have made certain inferences about the items. The inferences are as follows:{comment_formed} The above information is for reference only.\n
 """
 
-osm_query_template = """### MAP SEARCH ###: Based on the building sign and road sign in the image, we extract the textual infomation {filtered_Query}. Using these texts to search on OpenStreetMap and the top 3 results are: {osm_results}. Notice that the text and the comment results might not be useful for identifying the location.\n
+osm_query_template = """### MAP SEARCH ###: Based on the building sign and road sign in the image, we extract the textual information {filtered_Query}. Using these texts to search on OpenStreetMap and the top 3 results are: {osm_results}. Notice that the text and the comment results might not be useful for identifying the location.\n
 """
 
 outro_query = """Using the provided information as a reference, estimate the location depicted in the image with as much accuracy and precision as possible. Aim to deduce the exact coordinates whenever feasible. Format your response strictly as JSON in the following structure:{
