@@ -4,6 +4,7 @@ Covers: JSONL I/O, JSON parsing, CLIP-based RAG retrieval, GroundingDINO
 patching, Nominatim geocoding, and stage-6 query construction.
 """
 
+import hashlib
 import json
 import logging
 import math
@@ -11,9 +12,11 @@ import re
 import time
 from collections import defaultdict
 from pathlib import Path
+from typing import cast
 
 import cv2
 import faiss
+import filelock
 import numpy as np
 import requests
 import torch
@@ -40,6 +43,12 @@ _GROUNDING_DINO_CONFIG = (
 _GROUNDING_DINO_WEIGHTS = (
     _ROOT / "GroundingDINO" / "weights" / "groundingdino_swint_ogc.pth"
 )
+_NOMINATIM_CACHE_DIR = _ROOT / ".cache" / "nominatim"
+# Nominatim policy: regularly-scheduled batch scripts are limited to 4 req/min.
+# We enforce 15 s between requests across ALL parallel shards via a shared lock.
+_NOMINATIM_MIN_INTERVAL = 15.0
+_NOMINATIM_LOCK_PATH = _NOMINATIM_CACHE_DIR / ".rate_limit.lock"
+_NOMINATIM_TS_PATH = _NOMINATIM_CACHE_DIR / ".rate_limit.ts"
 
 # ── CLIP module-level cache ────────────────────────────────────────────────────
 # Loaded once on first call to retrieve_similar_images; reused for every
@@ -76,7 +85,65 @@ def _load_clip_resources() -> None:
     logger.info("CLIP and guidebook loaded.")
 
 
+def _cache_path(candidate: str, top_k: int) -> Path:
+    digest = hashlib.sha256(f"{candidate}:{top_k}".encode()).hexdigest()
+    return _NOMINATIM_CACHE_DIR / f"{digest}.json"
+
+
+def _cache_get(candidate: str, top_k: int) -> list[dict] | None:
+    try:
+        return json.loads(_cache_path(candidate, top_k).read_text())
+    except FileNotFoundError:
+        return None
+    except Exception as e:
+        logger.warning("Nominatim cache read error: %s", e)
+        return None
+
+
+def _cache_set(candidate: str, top_k: int, results: list[dict]) -> None:
+    path = _cache_path(candidate, top_k)
+    tmp = path.with_suffix(".tmp")
+    try:
+        _NOMINATIM_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        tmp.write_text(json.dumps(results))
+        tmp.replace(path)  # atomic even on NFS
+    except Exception as e:
+        logger.warning("Nominatim cache write error: %s", e)
+        try:
+            tmp.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
+def _nominatim_get(url: str, params: dict, headers: dict) -> requests.Response:
+    """Make a single Nominatim GET request respecting the cross-process rate limit.
+
+    Nominatim policy (https://operations.osmfoundation.org/policies/nominatim/):
+      - Absolute maximum: 1 request per second.
+      - Regularly-scheduled / long-running scripts: 4 requests per minute.
+    We enforce _NOMINATIM_MIN_INTERVAL (15 s) between requests across all
+    parallel shards by using a shared lock file + timestamp file.
+    """
+    _NOMINATIM_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    lock = filelock.FileLock(str(_NOMINATIM_LOCK_PATH), timeout=300)
+    with lock:
+        now = time.time()
+        try:
+            last_ts = float(_NOMINATIM_TS_PATH.read_text())
+        except (FileNotFoundError, ValueError):
+            last_ts = 0.0
+        wait = _NOMINATIM_MIN_INTERVAL - (now - last_ts)
+        if wait > 0:
+            logger.debug("Nominatim rate-limit: sleeping %.1f s", wait)
+            time.sleep(wait)
+        # Record the slot before releasing the lock so the next process waits.
+        _NOMINATIM_TS_PATH.write_text(str(time.time()))
+
+    return requests.get(url, params=params, headers=headers, timeout=30)
+
+
 # ── JSONL I/O ─────────────────────────────────────────────────────────────────
+
 
 def load_data(path: str) -> list[dict]:
     with open(path, encoding="utf-8") as f:
@@ -91,6 +158,7 @@ def dump_jsonl(objects, file_name: str) -> None:
 
 
 # ── OSM candidate parsing ──────────────────────────────────────────────────────
+
 
 def _parse_osm_candidates(query) -> list[str]:
     """Extract location-string candidates from a VLM response.
@@ -142,16 +210,15 @@ def _parse_osm_candidates(query) -> list[str]:
 
 # ── Nominatim geocoding ────────────────────────────────────────────────────────
 
-@retry(tries=3, delay=10)
+
+@retry(tries=2, delay=10)
 def search_place_nominatim(query: str, top_k: int = 3) -> list[dict] | None:
     """Query Nominatim for each candidate in *query* and return deduplicated results.
 
     The User-Agent includes a contact address per Nominatim's usage policy:
     https://operations.osmfoundation.org/policies/nominatim/
     """
-    headers = {
-        "User-Agent": "UMIACS/NAVIG_1.1.0 (contact: kinsey.long@berkeley.edu)"
-    }
+    headers = {"User-Agent": "UMIACS/NAVIG_1.1.0 (contact: kinsey.long@berkeley.edu)"}
     candidates = _parse_osm_candidates(query)
     if not candidates:
         return None
@@ -161,24 +228,29 @@ def search_place_nominatim(query: str, top_k: int = 3) -> list[dict] | None:
     for candidate in candidates:
         if candidate.lower() in _OSM_PROMPT_WORDS:
             continue
+        cached = _cache_get(candidate, top_k)
+        if cached is not None:
+            logger.debug("Nominatim cache hit: %r", candidate)
+            all_results.extend(cached)
+            continue
         params = {"q": candidate, "format": "json", "limit": top_k}
         logger.debug("Nominatim query: %r", candidate)
-        response = requests.get(url, params=params, headers=headers)
+        response = _nominatim_get(url, params, headers)
         if response.status_code == 429:
-            logger.warning("Nominatim 429 Too Many Requests — sleeping 60 s before retry")
-            time.sleep(60)
+            logger.warning("Nominatim 429 Too Many Requests — backing off 10s")
+            time.sleep(10)
             raise Exception("429 Too Many Requests")
         response.raise_for_status()
         logger.debug("Nominatim response status: %s", response.status_code)
-        time.sleep(2)  # respect Nominatim rate limit (1 req/s)
         try:
             content = response.json()
         except Exception:
             logger.warning("Failed to decode Nominatim JSON for query %r", candidate)
             continue
         if not content:
+            _cache_set(candidate, top_k, [])
             continue
-        all_results.extend(
+        candidate_results = [
             {
                 "place_name": item.get("name", "N/A"),
                 "location": item["display_name"],
@@ -186,7 +258,9 @@ def search_place_nominatim(query: str, top_k: int = 3) -> list[dict] | None:
                 "lon": item["lon"],
             }
             for item in content[:top_k]
-        )
+        ]
+        _cache_set(candidate, top_k, candidate_results)
+        all_results.extend(candidate_results)
 
     if not all_results:
         return None
@@ -194,7 +268,12 @@ def search_place_nominatim(query: str, top_k: int = 3) -> list[dict] | None:
     seen: set[tuple] = set()
     unique: list[dict] = []
     for item in all_results:
-        key = (item.get("place_name"), item.get("location"), item.get("lat"), item.get("lon"))
+        key = (
+            item.get("place_name"),
+            item.get("location"),
+            item.get("lat"),
+            item.get("lon"),
+        )
         if key not in seen:
             seen.add(key)
             unique.append(item)
@@ -210,6 +289,7 @@ def search_place_with_retry(query: str, top_k: int = 3) -> list[dict] | None:
 
 
 # ── CLIP-based RAG retrieval ──────────────────────────────────────────────────
+
 
 def retrieve_similar_images(
     input_image_path: str, k: int = 5, threshold: float = 30.0
@@ -311,6 +391,7 @@ def parse_json(guess: str) -> dict | None:
 
 # ── Stage-6 query construction ─────────────────────────────────────────────────
 
+
 def build_guess_query(
     row: dict,
     *,
@@ -382,6 +463,7 @@ def build_guess_query(
 
 # ── GroundingDINO patch extraction ────────────────────────────────────────────
 
+
 class PatchImages:
     """Detect and crop geo-relevant objects from an image using GroundingDINO."""
 
@@ -401,9 +483,7 @@ class PatchImages:
             if grounding_dino_config_path
             else _GROUNDING_DINO_CONFIG
         )
-        weights = (
-            Path(weights_path) if weights_path else _GROUNDING_DINO_WEIGHTS
-        )
+        weights = Path(weights_path) if weights_path else _GROUNDING_DINO_WEIGHTS
         self.model = load_model(str(config), str(weights))
 
     def __call__(

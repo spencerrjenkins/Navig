@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=comparison
-#SBATCH --output=logs/im2gps200/comparison-%j.out
-#SBATCH --error=logs/im2gps200/comparison-%j.err
+#SBATCH --output=logs/im2gps300/comparison-%j.out
+#SBATCH --error=logs/im2gps300/comparison-%j.err
 #SBATCH --time=00:10:00
 #SBATCH --account=nexus
 #SBATCH --partition=tron
@@ -31,7 +31,7 @@
 # SKIP LOGIC
 # ----------
 # A model is skipped if results_s5.jsonl already exists in ALL shard dirs:
-#   output/im2gps200/cmp_shard_<model>_{0..N-1}_of_N/results_s5.jsonl
+#   output/im2gps300/cmp_shard_<model>_{0..N-1}_of_N/results_s5.jsonl
 # This correctly distinguishes completed from preempted/partially-run shards.
 # Delete those files (or the whole shard dirs) to force a re-run.
 #
@@ -42,6 +42,8 @@
 #   sbatch run_comparison.sh --rerun_stage6 qwen_sft
 #   sbatch run_comparison.sh --retry_failed cpm
 #   sbatch run_comparison.sh --no_ablation
+#   sbatch run_comparison.sh --resume
+#   sbatch run_comparison.sh --resume --only deepseek
 
 set -uo pipefail
 
@@ -50,6 +52,7 @@ ONLY_MODELS=()
 RERUN_STAGE6=""
 RETRY_FAILED=""
 NO_ABLATION=false
+RESUME=false
 while [[ $# -gt 0 ]]; do
     case $1 in
         --only)
@@ -61,6 +64,7 @@ while [[ $# -gt 0 ]]; do
         --rerun_stage6) RERUN_STAGE6="$2"; shift 2 ;;
         --retry_failed) RETRY_FAILED="$2"; shift 2 ;;
         --no_ablation)  NO_ABLATION=true; shift ;;
+        --resume)       RESUME=true; shift ;;
         *) echo "Unknown argument: $1" >&2; exit 1 ;;
     esac
 done
@@ -68,8 +72,8 @@ done
 cd /nfshomes/srjnk01/Navig
 mkdir -p logs
 
-BASE_DIR=output/im2gps200
-DATASET=dataset/im2gps200
+BASE_DIR=output/im2gps300
+DATASET=dataset/im2gps300
 NUM_SHARDS=4
 
 # ── Model weight paths ───────────────────────────────────────────────────────
@@ -121,8 +125,8 @@ if [[ -n "${RERUN_STAGE6}" ]]; then
     echo "==> Submitting stage-6-only rerun for ${MODEL_KEY} (${NUM_SHARDS} shards)..."
     sbatch --parsable \
         --job-name=s6-${MODEL_KEY} \
-        --output=logs/im2gps200/s6-${MODEL_KEY}-%j_%a.out \
-        --error=logs/im2gps200/s6-${MODEL_KEY}-%j_%a.err \
+        --output=logs/im2gps300/s6-${MODEL_KEY}-%j_%a.out \
+        --error=logs/im2gps300/s6-${MODEL_KEY}-%j_%a.err \
         --time=4:00:00 --account=nexus --partition=tron --qos=default \
         --nodes=1 --ntasks=1 --requeue \
         --gres=gpu:rtxa6000:1 --mem=32g \
@@ -170,8 +174,8 @@ if [[ -n "${RETRY_FAILED}" ]]; then
     echo "==> Submitting stage-6 retry-failed job for ${MODEL_KEY} (${NUM_SHARDS} shards)..."
     sbatch --parsable \
         --job-name=retry-${MODEL_KEY} \
-        --output=logs/im2gps200/retry-${MODEL_KEY}-%j_%a.out \
-        --error=logs/im2gps200/retry-${MODEL_KEY}-%j_%a.err \
+        --output=logs/im2gps300/retry-${MODEL_KEY}-%j_%a.out \
+        --error=logs/im2gps300/retry-${MODEL_KEY}-%j_%a.err \
         --time=2:00:00 --account=nexus --partition=tron --qos=default \
         --nodes=1 --ntasks=1 --requeue \
         --gres=gpu:rtxa6000:1 --mem=32g \
@@ -197,7 +201,7 @@ fi
 
 # ── Helper: submit one full-pipeline SLURM array job ─────────────────────────
 # Args: model_key model_type model_path label [ckpt_dir]
-# Prints the submitted job ID, or "SKIP" if all shards are already complete.
+# Prints the submitted job ID, or "SKIP" if all stages are already complete.
 submit_model() {
     local model_key=$1
     local model_type=$2
@@ -207,19 +211,62 @@ submit_model() {
     local results_name=results_s6_${model_key}.jsonl
     local shard_prefix=cmp_shard_${model_key}
 
-    # A shard is complete only when results_s5.jsonl exists inside it —
-    # directory existence alone is insufficient (preempted jobs leave partial dirs).
-    local all_complete=true
-    for shard_id in $(seq 0 $((NUM_SHARDS - 1))); do
-        if [[ ! -f "${BASE_DIR}/${shard_prefix}_${shard_id}_of_${NUM_SHARDS}/results_s5.jsonl" ]]; then
-            all_complete=false
-            break
+    local stage6_only_flag=""
+    local start_stage_arg=""
+
+    if [[ "${RESUME}" == "true" ]]; then
+        # Find highest stage (1–5) where every shard has results_sN.jsonl.
+        # Stages are sequential, so we stop at the first gap.
+        local next_stage=1
+        for stage in 1 2 3 4 5; do
+            local all_have=true
+            for shard_id in $(seq 0 $((NUM_SHARDS - 1))); do
+                if [[ ! -f "${BASE_DIR}/${shard_prefix}_${shard_id}_of_${NUM_SHARDS}/results_s${stage}.jsonl" ]]; then
+                    all_have=false; break
+                fi
+            done
+            if [[ "${all_have}" == "true" ]]; then
+                next_stage=$((stage + 1))
+            else
+                break
+            fi
+        done
+
+        # If stages 1–5 are all done, check whether stage 6 is also done.
+        if [[ $next_stage -eq 6 ]]; then
+            local all_s6=true
+            for shard_id in $(seq 0 $((NUM_SHARDS - 1))); do
+                if [[ ! -f "${BASE_DIR}/${shard_prefix}_${shard_id}_of_${NUM_SHARDS}/${results_name}" ]]; then
+                    all_s6=false; break
+                fi
+            done
+            if [[ "${all_s6}" == "true" ]]; then
+                echo "==> SKIP ${model_key} (${label}): all stages complete." >&2
+                echo "SKIP"
+                return
+            fi
+            stage6_only_flag="--stage6_only"
+            echo "==> Resuming ${model_key} (${label}): stages 1–5 done, running stage 6." >&2
+        elif [[ $next_stage -gt 1 ]]; then
+            start_stage_arg="--start_stage ${next_stage}"
+            echo "==> Resuming ${model_key} (${label}): starting from stage ${next_stage}." >&2
         fi
-    done
-    if [[ "${all_complete}" == "true" ]]; then
-        echo "==> SKIP ${model_key} (${label}): all ${NUM_SHARDS} shards already complete." >&2
-        echo "SKIP"
-        return
+        # next_stage == 1: nothing done, run from the beginning (no extra flags).
+    else
+        # Without --resume, skip if stages 1–5 are complete across all shards.
+        # (Stage 6 re-runs are handled separately via --rerun_stage6.)
+        local all_complete=true
+        for shard_id in $(seq 0 $((NUM_SHARDS - 1))); do
+            if [[ ! -f "${BASE_DIR}/${shard_prefix}_${shard_id}_of_${NUM_SHARDS}/results_s5.jsonl" ]]; then
+                all_complete=false
+                break
+            fi
+        done
+        if [[ "${all_complete}" == "true" ]]; then
+            echo "==> SKIP ${model_key} (${label}): all ${NUM_SHARDS} shards already complete." >&2
+            echo "SKIP"
+            return
+        fi
     fi
 
     local ckpt_arg=""
@@ -230,8 +277,8 @@ submit_model() {
     local jid
     jid=$(sbatch --parsable \
         --job-name=cmp-${model_key} \
-        --output=logs/im2gps200/cmp-${model_key}-%j_%a.out \
-        --error=logs/im2gps200/cmp-${model_key}-%j_%a.err \
+        --output=logs/im2gps300/cmp-${model_key}-%j_%a.out \
+        --error=logs/im2gps300/cmp-${model_key}-%j_%a.err \
         --time=24:00:00 --account=nexus --partition=tron --qos=default \
         --nodes=1 --ntasks=1 --requeue \
         --gres=gpu:rtxa6000:1 --mem=32g \
@@ -250,7 +297,9 @@ python3 pipeline/evaluation.py \\
     --box_threshold     0.3 \\
     --text_threshold    0.25 \\
     --num_shards        ${NUM_SHARDS} \\
-    --shard_id          \${SLURM_ARRAY_TASK_ID}")
+    --shard_id          \${SLURM_ARRAY_TASK_ID} \\
+    ${start_stage_arg} \\
+    ${stage6_only_flag}")
     echo "==> Submitted ${model_key} (${label}) → job ${jid} (array 0-$((NUM_SHARDS-1)))" >&2
     echo "${jid}"
 }
@@ -345,8 +394,8 @@ if [[ ${#EVAL_JOB_IDS[@]} -gt 0 ]]; then
     echo "==> Submitting merge+analysis job (depends on: ${EVAL_JOB_IDS[*]})..."
     MERGE_JID=$(sbatch --parsable \
         --job-name=analyze \
-        --output=logs/im2gps200/analyze-%j.out \
-        --error=logs/im2gps200/analyze-%j.err \
+        --output=logs/im2gps300/analyze-%j.out \
+        --error=logs/im2gps300/analyze-%j.err \
         --time=01:00:00 --account=nexus --partition=tron --qos=default \
         --nodes=1 --ntasks=1 --mem=32g \
         --dependency="${DEPEND}" \
@@ -400,8 +449,8 @@ if [[ "${NO_ABLATION}" == "false" ]]; then
 
         ABL_JID=$(sbatch --parsable \
             --job-name=abl-${model_key} \
-            --output=logs/im2gps200/abl-${model_key}-%j.out \
-            --error=logs/im2gps200/abl-${model_key}-%j.err \
+            --output=logs/im2gps300/abl-${model_key}-%j.out \
+            --error=logs/im2gps300/abl-${model_key}-%j.err \
             --time=12:00:00 --account=nexus --partition=tron --qos=default \
             --nodes=1 --ntasks=1 \
             --gres=gpu:rtxa6000:1 --mem=32g \

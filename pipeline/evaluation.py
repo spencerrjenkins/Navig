@@ -338,25 +338,30 @@ class Evaluator:
             json.dump(meta, f, indent=2)
         logger.info("Metadata written to %s", meta_path)
 
-    def forward(self) -> None:
-        """Run stages 1–5, writing intermediate results to disk."""
+    def forward(self, start_stage: int = 1) -> None:
+        """Run stages start_stage–5, writing intermediate results to disk."""
         os.makedirs(self.output_path, exist_ok=True)
         self._write_metadata()
 
-        dump_jsonl(
-            self.get_reasoning(), os.path.join(self.output_path, "results_s1.jsonl")
-        )
+        if start_stage <= 1:
+            dump_jsonl(
+                self.get_reasoning(), os.path.join(self.output_path, "results_s1.jsonl")
+            )
 
         self._load_base_model()
 
-        dump_jsonl(
-            self.get_grounding(), os.path.join(self.output_path, "results_s2.jsonl")
-        )
-        dump_jsonl(self.get_rag(), os.path.join(self.output_path, "results_s3.jsonl"))
-        dump_jsonl(
-            self.get_comment(), os.path.join(self.output_path, "results_s4.jsonl")
-        )
-        dump_jsonl(self.get_osm(), os.path.join(self.output_path, "results_s5.jsonl"))
+        if start_stage <= 2:
+            dump_jsonl(
+                self.get_grounding(), os.path.join(self.output_path, "results_s2.jsonl")
+            )
+        if start_stage <= 3:
+            dump_jsonl(self.get_rag(), os.path.join(self.output_path, "results_s3.jsonl"))
+        if start_stage <= 4:
+            dump_jsonl(
+                self.get_comment(), os.path.join(self.output_path, "results_s4.jsonl")
+            )
+        if start_stage <= 5:
+            dump_jsonl(self.get_osm(), os.path.join(self.output_path, "results_s5.jsonl"))
 
     def guess_forward(self) -> None:
         """Run stage 6, writing final predictions to disk."""
@@ -491,6 +496,13 @@ def parse_args():
         help="Which shard this process handles (0-indexed)",
     )
     p.add_argument(
+        "--start_stage",
+        type=int,
+        default=1,
+        choices=[1, 2, 3, 4, 5],
+        help="Resume pipeline from this stage (prior stages must already be complete).",
+    )
+    p.add_argument(
         "--stage6_only",
         action="store_true",
         help="Skip stages 1–5; run stage 6 on existing results_s5.jsonl",
@@ -531,7 +543,7 @@ if __name__ == "__main__":
     if args.stage6_only or args.retry_failed:
         evaluator._load_base_model()
     else:
-        evaluator.forward()
+        evaluator.forward(start_stage=args.start_stage)
         evaluator._load_base_model()
 
     if args.retry_failed:

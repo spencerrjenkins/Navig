@@ -1,18 +1,44 @@
 #!/usr/bin/env python3
 """Generate publication figures for the NAVIG evaluation.
 
-Produces ten PDFs (numbered to match model_justification.tex figure order):
+Produces 25 PDFs across five categories:
 
-  fig1_geoscore.pdf      — GeoScore bar chart for all models, SFT pairs grouped
-  fig2_thresholds.pdf    — Accuracy at 5 distance thresholds for all models
-  fig3_distribution.pdf  — Distance violin + IQR box chart
-  fig4_evidence.pdf      — Evidence-component GeoScore deltas
-  fig5_geographic.pdf    — Geographic GeoScore heatmap by continent
-  fig6_cdf.pdf           — Empirical CDF of prediction error (km) for all models
-  fig7_difficulty.pdf    — Accuracy breakdown by image difficulty tercile
-  fig8_agreement.pdf     — Pairwise joint accuracy heatmap
-  fig9_failure_modes.pdf — Prediction outcome decomposition (stacked bar)
-  fig10_sft_delta.pdf    — GeoScore delta (SFT − base) for each model family
+  CORE RESULTS
+  fig1_geoscore.pdf         — GeoScore bar chart for all models
+  fig2_thresholds.pdf       — Accuracy at 5 distance thresholds (all models)
+  fig3_distribution.pdf     — Distance violin + IQR box chart
+  fig4_evidence.pdf         — Evidence-component GeoScore deltas
+  fig5_geographic.pdf       — Geographic GeoScore heatmap by continent
+  fig6_cdf.pdf              — Empirical CDF of prediction error (km)
+  fig7_difficulty.pdf       — Accuracy breakdown by image difficulty tercile
+  fig8_agreement.pdf        — Pairwise joint accuracy heatmap
+  fig9_failure_modes.pdf    — Prediction outcome decomposition (stacked bar)
+  fig10_sft_delta.pdf       — GeoScore delta (SFT − base) per model family
+
+  DATASET CHARACTERIZATION  [Im2GPS; OSV5M CVPR 2024; IMAGEO-Bench 2025]
+  fig11_dataset_map.pdf     — World scatter of Im2GPS3k ground-truth locations
+  fig12_dataset_continent.pdf — Image count per continent (with percentages)
+
+  PERFORMANCE ANALYSIS  [PIGEON CVPR 2024; GeoReasoner ICML 2024; arXiv 2502.14412]
+  fig13_median_error.pdf    — Median geodesic error bar chart with P25–P75 error bars
+  fig14_geoscore_boxplot.pdf — Per-image GeoScore violin distributions
+  fig15_error_percentiles.pdf — P10/P25/P50/P75/P90 error grouped bars
+
+  ERROR ANALYSIS  [IMAGEO-Bench 2025; VLMs as GeoGuessr Masters 2025]
+  fig16_error_by_continent.pdf — Mean GeoScore by continent (grouped bars)
+  fig17_coordinate_bias.pdf — Systematic lat/lon prediction bias (violin)
+  fig18_error_vs_latitude.pdf — Median error by ground-truth latitude band
+
+  PIPELINE / EVIDENCE ANALYSIS  [NAVIG 2025 Table 6; PIGEON 2024 Table 1]
+  fig19_evidence_usage.pdf  — Evidence component usage rate per model
+  fig20_evidence_count_accuracy.pdf — GeoScore vs. number of active evidence components
+  fig21_osm_impact.pdf      — GeoScore: OSM geocoding used vs. not used
+  fig22_crop_detection.pdf  — GroundingDINO crop detection rate per category
+
+  CROSS-MODEL COMPARISON  [VLMs as GeoGuessr Masters 2025; GeoReasoner ICML 2024]
+  fig23_prediction_density.pdf — Predicted vs. ground-truth location density maps
+  fig24_sft_gain_by_continent.pdf — SFT GeoScore improvement broken down by continent
+  fig25_top_countries.pdf   — Top predicted countries per model (mode-collapse analysis)
 
 Usage::
 
@@ -1004,12 +1030,21 @@ def fig17_coordinate_bias(models: list[dict], output_dir: Path) -> None:
         print("  fig17_coordinate_bias.pdf: no data, skipping")
         return
 
-    lat_biases = [[p["pred_lat"] - p["true_lat"]
-                   for p in m["preds"] if not p["fail"] and not np.isnan(p["pred_lat"])]
-                  for m in available]
-    lon_biases = [[p["pred_lon"] - p["true_lon"]
-                   for p in m["preds"] if not p["fail"] and not np.isnan(p["pred_lon"])]
-                  for m in available]
+    lat_biases_raw = [[p["pred_lat"] - p["true_lat"]
+                       for p in m["preds"] if not p["fail"] and not np.isnan(p["pred_lat"])]
+                      for m in available]
+    lon_biases_raw = [[p["pred_lon"] - p["true_lon"]
+                       for p in m["preds"] if not p["fail"] and not np.isnan(p["pred_lon"])]
+                      for m in available]
+    # drop models that have no valid predictions for either axis
+    valid = [i for i in range(len(available))
+             if len(lat_biases_raw[i]) > 0 and len(lon_biases_raw[i]) > 0]
+    if not valid:
+        print("  fig17_coordinate_bias.pdf: no valid predictions, skipping")
+        return
+    available = [available[i] for i in valid]
+    lat_biases = [lat_biases_raw[i] for i in valid]
+    lon_biases = [lon_biases_raw[i] for i in valid]
     labels = [m["label"].replace("\n", " ") for m in available]
     colors = [_model_color(m) for m in available]
 
@@ -1471,7 +1506,9 @@ def main():
         models_by_key[key] = stats
 
     print(f"\nGenerating figures in {output_dir}/")
-    '''fig1_geoscore(models, output_dir)
+
+    # ── Original 10 figures ──────────────────────────────────────────────────
+    fig1_geoscore(models, output_dir)
     fig2_thresholds(models, output_dir)
     fig3_distribution(models, output_dir)
     fig4_evidence(models, output_dir)
@@ -1481,21 +1518,32 @@ def main():
     fig8_agreement(models, output_dir)
     fig9_failure_modes(models, output_dir)
     fig10_sft_delta(models_by_key, output_dir)
+
+    # ── Dataset characterization (fig11–fig12) ───────────────────────────────
     fig11_dataset_map(models, output_dir)
     fig12_dataset_continent(models, output_dir)
+
+    # ── Performance analysis (fig13–fig15) ───────────────────────────────────
     fig13_median_error(models, output_dir)
     fig14_geoscore_boxplot(models, output_dir)
     fig15_error_percentiles(models, output_dir)
+
+    # ── Error analysis (fig16–fig18) ─────────────────────────────────────────
     fig16_error_by_continent(models, output_dir)
-    fig17_coordinate_bias(models, output_dir)'''
+    fig17_coordinate_bias(models, output_dir)
     fig18_error_vs_latitude(models, output_dir)
+
+    # ── Pipeline / evidence analysis (fig19–fig22) ───────────────────────────
     fig19_evidence_usage(models, output_dir)
     fig20_evidence_count_accuracy(models, output_dir)
     fig21_osm_impact(models, output_dir)
     fig22_crop_detection(models, output_dir)
+
+    # ── Cross-model comparison (fig23–fig25) ─────────────────────────────────
     fig23_prediction_density(models, output_dir)
     fig24_sft_gain_by_continent(models, output_dir)
     fig25_top_countries(models, output_dir)
+
     print("Done.")
 
 

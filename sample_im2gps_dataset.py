@@ -4,8 +4,8 @@
 Example:
     python sample_im2gps_dataset.py \
         --source_dir dataset/im2gps3k \
-        --output_dir dataset/im2gps200 \
-        --num_samples 200 \
+        --output_dir dataset/im2gps300 \
+        --num_samples 300 \
         --seed 42
 """
 
@@ -32,13 +32,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output_dir",
         type=Path,
-        default=Path("dataset/im2gps200"),
+        default=Path("dataset/im2gps300"),
         help="Destination directory for the sampled dataset",
     )
     parser.add_argument(
         "--num_samples",
         type=int,
-        default=200,
+        default=300,
         help="Number of rows/images to sample",
     )
     parser.add_argument(
