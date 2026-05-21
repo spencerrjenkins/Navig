@@ -9,7 +9,7 @@ Usage::
 
     python pipeline/inference.py \\
         --model qwen \\
-        --image_path dataset/im2gps3k_rgb_images/images/example.jpg \\
+        --image_path dataset/im2gps3k/images/example.jpg \\
         --model_path /fs/nexus-scratch/$USER/Qwen2-VL-7B-Instruct \\
         --ckpt_dir vlms/NAVIG/qwen2-vl-7b-instruct \\
         --box_threshold 0.3 \\
@@ -21,6 +21,7 @@ The final prediction is printed to stdout and also available as
 
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import argparse
@@ -34,9 +35,12 @@ import prompts
 from llm import load_model, load_sft_model
 from metrics import parse_coord, haversine_distance
 from utils import (
-    load_data, parse_json,
-    search_place_with_retry, PatchImages,
-    retrieve_similar_images, _parse_osm_candidates,
+    load_data,
+    parse_json,
+    search_place_with_retry,
+    PatchImages,
+    retrieve_similar_images,
+    _parse_osm_candidates,
     build_guess_query,
 )
 
@@ -96,12 +100,15 @@ class Inference:
             for i, cropped_arr in enumerate(cropped_list):
                 try:
                     img = Image.fromarray(cropped_arr)
-                    save_path = os.path.join(patch_dir, f"{filename}_{category}_{i}.jpg")
+                    save_path = os.path.join(
+                        patch_dir, f"{filename}_{category}_{i}.jpg"
+                    )
                     img.save(save_path)
                     crops[category].append(save_path)
                 except Exception as e:
-                    logger.warning("Failed to save patch %s/%s/%d: %s",
-                                   filename, category, i, e)
+                    logger.warning(
+                        "Failed to save patch %s/%s/%d: %s", filename, category, i, e
+                    )
         self.results["crop"] = crops
         logger.info("Grounding patches saved to %s", patch_dir)
 
@@ -175,15 +182,22 @@ class Inference:
 
 
 def parse_args():
-    p = argparse.ArgumentParser(description=__doc__,
-                                formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--image_path", type=str, required=True,
-                   help="Path to the input image")
-    p.add_argument("--model", type=str, default="qwen",
-                   choices=["qwen", "llava", "cpm"])
+    p = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    p.add_argument(
+        "--image_path", type=str, required=True, help="Path to the input image"
+    )
+    p.add_argument(
+        "--model", type=str, default="qwen", choices=["qwen", "llava", "cpm"]
+    )
     p.add_argument("--model_path", type=str, required=True)
-    p.add_argument("--ckpt_dir", type=str, required=True,
-                   help="Path to LoRA SFT adapter for stage 1")
+    p.add_argument(
+        "--ckpt_dir",
+        type=str,
+        required=True,
+        help="Path to LoRA SFT adapter for stage 1",
+    )
     p.add_argument("--box_threshold", type=float, default=0.3)
     p.add_argument("--text_threshold", type=float, default=0.25)
     return p.parse_args()

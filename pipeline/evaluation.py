@@ -14,8 +14,8 @@ Usage (single shard, manual)::
 
     python pipeline/evaluation.py \\
         --model qwen \\
-        --dataset_path dataset/im2gps3k_rgb_images \\
-        --output_path output/im2gps3k_rgb_images/shard_0_of_1 \\
+        --dataset_path dataset/im2gps3k \\
+        --output_path output/im2gps3k/shard_0_of_1 \\
         --results_filename results_s6_qwen.jsonl \\
         --model_path /fs/nexus-scratch/$USER/Qwen2-VL-7B-Instruct \\
         --ckpt_dir vlms/NAVIG/qwen2-vl-7b-instruct
@@ -25,6 +25,7 @@ See slurm/evaluate.sh for the recommended 4-shard SLURM array job.
 
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import argparse
@@ -32,6 +33,7 @@ import json
 import logging
 import os
 import subprocess
+from collections import defaultdict
 from datetime import datetime, timezone
 
 from PIL import Image
@@ -40,13 +42,20 @@ from tqdm import tqdm
 import prompts
 from llm import load_model, load_sft_model
 from metrics import (
-    THRESHOLDS, THRESHOLD_NAMES,
-    parse_coord, score_results, print_score_summary,
+    THRESHOLDS,
+    THRESHOLD_NAMES,
+    parse_coord,
+    score_results,
+    print_score_summary,
 )
 from utils import (
-    load_data, dump_jsonl, parse_json,
-    search_place_with_retry, PatchImages,
-    retrieve_similar_images, _parse_osm_candidates,
+    load_data,
+    dump_jsonl,
+    parse_json,
+    search_place_with_retry,
+    PatchImages,
+    retrieve_similar_images,
+    _parse_osm_candidates,
     build_guess_query,
 )
 
@@ -104,7 +113,9 @@ class Evaluator:
             data = data[self.shard_id :: self.num_shards]
             logger.info(
                 "Shard %d/%d: processing %d samples",
-                self.shard_id, self.num_shards, len(data),
+                self.shard_id,
+                self.num_shards,
+                len(data),
             )
         return data
 
@@ -118,12 +129,14 @@ class Evaluator:
         logger.info("Stage 1 — Reasoning")
         # Note: the SFT model always uses Swift regardless of --use_vllm because
         # vLLM's LoRA + multimodal support for LLaVA-NeXT is not stable.
-        reasoning_model = load_sft_model(self.model_type, self.model_path, self.ckpt_dir)
+        reasoning_model = load_sft_model(
+            self.model_type, self.model_path, self.ckpt_dir
+        )
         data = self._load_shard(os.path.join(self.dataset_path, "meta.jsonl"))
-        for row in tqdm(data, desc="Stage 1"):
-            row["image_reason"] = reasoning_model.base_inference(
-                prompts.reasoning_prompt, self._image_path(row)
-            )
+        requests = [(prompts.reasoning_prompt, self._image_path(row)) for row in data]
+        responses = reasoning_model.batch_inference(requests)
+        for row, response in zip(data, responses):
+            row["image_reason"] = response
             yield row
 
     # ── Stage 2: Grounding ────────────────────────────────────────────────────
@@ -155,8 +168,13 @@ class Evaluator:
                         img.save(save_path)
                         crops[category].append(save_path)
                     except Exception as e:
-                        logger.warning("Failed to save patch %s/%s/%d: %s",
-                                       row["ID"], category, i, e)
+                        logger.warning(
+                            "Failed to save patch %s/%s/%d: %s",
+                            row["ID"],
+                            category,
+                            i,
+                            e,
+                        )
             row["crop"] = crops
             yield row
 
@@ -188,16 +206,28 @@ class Evaluator:
         """Yield rows with 'comment' field: {category: tab-separated VLM responses}."""
         logger.info("Stage 4 — Commenting")
         data = load_data(os.path.join(self.output_path, "results_s3.jsonl"))
-        for row in tqdm(data, desc="Stage 4"):
-            commented: dict[str, str] = {}
+
+        requests: list[tuple[str, str]] = []
+        keys: list[tuple[int, str]] = []
+        for row_idx, row in enumerate(data):
             for category, images in row["crop"].items():
                 k = _HOUSE_CROP_LIMIT if category == "house" else len(images)
                 query = prompts.comment_gen_template.format(item=category)
-                comments = []
                 for image in images[:k]:
-                    comments.append(self.base_model.base_inference(query, image))
-                commented[category] = "\t".join(comments)
-            row["comment"] = commented
+                    requests.append((query, image))
+                    keys.append((row_idx, category))
+
+        responses = self.base_model.batch_inference(requests)
+
+        grouped: dict[tuple[int, str], list[str]] = defaultdict(list)
+        for (row_idx, category), response in zip(keys, responses):
+            grouped[(row_idx, category)].append(response)
+
+        for row_idx, row in enumerate(data):
+            row["comment"] = {
+                category: "\t".join(grouped.get((row_idx, category), []))
+                for category in row["crop"]
+            }
             yield row
 
     # ── Stage 5: OCR / OSM ────────────────────────────────────────────────────
@@ -206,14 +236,30 @@ class Evaluator:
         """Yield rows with 'genQuery' (VLM OCR output) and 'osm' (Nominatim results)."""
         logger.info("Stage 5 — OCR / OSM")
         data = load_data(os.path.join(self.output_path, "results_s4.jsonl"))
-        for row in tqdm(data, desc="Stage 5"):
+
+        requests: list[tuple[str, str]] = []
+        keys: list[tuple[int, str, int]] = []
+        for row_idx, row in enumerate(data):
+            for category, images in row["crop"].items():
+                for image_idx, image in enumerate(images):
+                    requests.append((prompts.osm_gen, image))
+                    keys.append((row_idx, category, image_idx))
+
+        ocr_responses = self.base_model.batch_inference(requests)
+
+        grouped: dict[tuple[int, str], list[tuple[int, str]]] = defaultdict(list)
+        for (row_idx, category, image_idx), response in zip(keys, ocr_responses):
+            grouped[(row_idx, category)].append((image_idx, response))
+        for v in grouped.values():
+            v.sort()
+
+        for row_idx, row in enumerate(tqdm(data, desc="Stage 5 (OSM)")):
             row["genQuery"] = {}
             row["osm"] = None
-            for category, images in row["crop"].items():
-                row["genQuery"][category] = []
-                for image in images:
-                    ocr_output = self.base_model.base_inference(prompts.osm_gen, image)
-                    row["genQuery"][category].append(ocr_output)
+            for category in row["crop"]:
+                ocr_list = grouped.get((row_idx, category), [])
+                row["genQuery"][category] = [resp for _, resp in ocr_list]
+                for _, ocr_output in ocr_list:
                     candidates = _parse_osm_candidates(ocr_output)
                     if not candidates:
                         continue
@@ -234,9 +280,17 @@ class Evaluator:
         data = load_data(os.path.join(self.output_path, "results_s5.jsonl"))
         if only_ids is not None:
             data = [row for row in data if row["ID"] in only_ids]
-        for row in tqdm(data, desc="Stage 6"):
-            query, usage = build_guess_query(row, rag_threshold=self.rag_threshold)
-            raw = self.base_model.base_inference(query, self._image_path(row))
+
+        queries_usages = [
+            build_guess_query(row, rag_threshold=self.rag_threshold) for row in data
+        ]
+        requests = [
+            (query, self._image_path(row))
+            for (query, _), row in zip(queries_usages, data)
+        ]
+        responses = self.base_model.batch_inference(requests)
+
+        for row, (_, usage), raw in zip(data, queries_usages, responses):
             row["answer"] = parse_json(raw)
             row["usage"] = usage
             yield row
@@ -246,6 +300,7 @@ class Evaluator:
     def _load_base_model(self) -> None:
         import gc
         import torch
+
         gc.collect()
         torch.cuda.empty_cache()
         self.base_model = load_model(
@@ -259,7 +314,9 @@ class Evaluator:
         try:
             git_hash = subprocess.run(
                 ["git", "rev-parse", "--short", "HEAD"],
-                capture_output=True, text=True, check=True,
+                capture_output=True,
+                text=True,
+                check=True,
             ).stdout.strip()
         except Exception:
             git_hash = "unknown"
@@ -286,19 +343,20 @@ class Evaluator:
         os.makedirs(self.output_path, exist_ok=True)
         self._write_metadata()
 
-        dump_jsonl(self.get_reasoning(),
-                   os.path.join(self.output_path, "results_s1.jsonl"))
+        dump_jsonl(
+            self.get_reasoning(), os.path.join(self.output_path, "results_s1.jsonl")
+        )
 
         self._load_base_model()
 
-        dump_jsonl(self.get_grounding(),
-                   os.path.join(self.output_path, "results_s2.jsonl"))
-        dump_jsonl(self.get_rag(),
-                   os.path.join(self.output_path, "results_s3.jsonl"))
-        dump_jsonl(self.get_comment(),
-                   os.path.join(self.output_path, "results_s4.jsonl"))
-        dump_jsonl(self.get_osm(),
-                   os.path.join(self.output_path, "results_s5.jsonl"))
+        dump_jsonl(
+            self.get_grounding(), os.path.join(self.output_path, "results_s2.jsonl")
+        )
+        dump_jsonl(self.get_rag(), os.path.join(self.output_path, "results_s3.jsonl"))
+        dump_jsonl(
+            self.get_comment(), os.path.join(self.output_path, "results_s4.jsonl")
+        )
+        dump_jsonl(self.get_osm(), os.path.join(self.output_path, "results_s5.jsonl"))
 
     def guess_forward(self) -> None:
         """Run stage 6, writing final predictions to disk."""
@@ -314,7 +372,9 @@ class Evaluator:
         """
         existing_path = os.path.join(self.output_path, self.results_filename)
         if not os.path.exists(existing_path):
-            logger.info("No existing results at %s; running full stage 6.", existing_path)
+            logger.info(
+                "No existing results at %s; running full stage 6.", existing_path
+            )
             self.guess_forward()
             return
         existing = load_data(existing_path)
@@ -325,12 +385,16 @@ class Evaluator:
         logger.info(
             "Retrying %d failed rows out of %d total...", len(failed_ids), len(existing)
         )
-        retry_map = {row["ID"]: row for row in self.guess_coordinates(only_ids=failed_ids)}
+        retry_map = {
+            row["ID"]: row for row in self.guess_coordinates(only_ids=failed_ids)
+        }
         merged = [retry_map.get(row["ID"], row) for row in existing]
         dump_jsonl(merged, existing_path)
         still_failed = sum(1 for row in merged if row.get("answer") is None)
         logger.info(
-            "Updated %d rows. Still failing after retry: %d.", len(retry_map), still_failed
+            "Updated %d rows. Still failing after retry: %d.",
+            len(retry_map),
+            still_failed,
         )
 
     # ── Scoring ────────────────────────────────────────────────────────────────
@@ -354,43 +418,94 @@ class Evaluator:
             except Exception:
                 continue
         if total:
-            print(f"Country match: {country_correct/total:.4f} ({country_correct}/{total})")
+            print(
+                f"Country match: {country_correct/total:.4f} ({country_correct}/{total})"
+            )
             print(f"City match   : {city_correct/total:.4f} ({city_correct}/{total})")
 
 
 # ── CLI ────────────────────────────────────────────────────────────────────────
 
+
 def parse_args():
-    p = argparse.ArgumentParser(description=__doc__,
-                                formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--dataset_path", type=str, required=True,
-                   help="Root of dataset directory (must contain meta.jsonl and images/)")
-    p.add_argument("--model", type=str, default="qwen",
-                   choices=["qwen", "llava", "cpm", "deepseek", "falcon", "llama32vision"])
-    p.add_argument("--output_path", type=str, default=".",
-                   help="Output directory (created if absent)")
-    p.add_argument("--results_filename", type=str, default="results_s6.jsonl",
-                   help="Filename for the stage-6 output file")
-    p.add_argument("--box_threshold", type=float, default=0.3,
-                   help="GroundingDINO box confidence threshold (0–1)")
-    p.add_argument("--text_threshold", type=float, default=0.25,
-                   help="GroundingDINO text confidence threshold (0–1)")
-    p.add_argument("--model_path", type=str, required=True,
-                   help="Local path to base model weights")
-    p.add_argument("--ckpt_dir", type=str, default=None,
-                   help="Path to LoRA SFT adapter for stage 1")
-    p.add_argument("--use_vllm", action="store_true",
-                   help="Use vLLM acceleration for stages 4–6 (LLaVA only)")
-    p.add_argument("--num_shards", type=int, default=1,
-                   help="Total number of parallel shards")
-    p.add_argument("--shard_id", type=int, default=0,
-                   help="Which shard this process handles (0-indexed)")
-    p.add_argument("--stage6_only", action="store_true",
-                   help="Skip stages 1–5; run stage 6 on existing results_s5.jsonl")
-    p.add_argument("--retry_failed", action="store_true",
-                   help="Re-run stage 6 only for rows with answer=None (implies --stage6_only)")
-    p.add_argument("--rag_threshold", type=float, default=30.0,
-                   help="Max distance (km) for a RAG hit to be included in the stage-6 prompt")
+    p = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    p.add_argument(
+        "--dataset_path",
+        type=str,
+        required=True,
+        help="Root of dataset directory (must contain meta.jsonl and images/)",
+    )
+    p.add_argument(
+        "--model",
+        type=str,
+        default="qwen",
+        choices=["qwen", "llava", "cpm", "deepseek", "falcon", "llama32vision"],
+    )
+    p.add_argument(
+        "--output_path",
+        type=str,
+        default=".",
+        help="Output directory (created if absent)",
+    )
+    p.add_argument(
+        "--results_filename",
+        type=str,
+        default="results_s6.jsonl",
+        help="Filename for the stage-6 output file",
+    )
+    p.add_argument(
+        "--box_threshold",
+        type=float,
+        default=0.3,
+        help="GroundingDINO box confidence threshold (0–1)",
+    )
+    p.add_argument(
+        "--text_threshold",
+        type=float,
+        default=0.25,
+        help="GroundingDINO text confidence threshold (0–1)",
+    )
+    p.add_argument(
+        "--model_path", type=str, required=True, help="Local path to base model weights"
+    )
+    p.add_argument(
+        "--ckpt_dir",
+        type=str,
+        default=None,
+        help="Path to LoRA SFT adapter for stage 1",
+    )
+    p.add_argument(
+        "--use_vllm",
+        action="store_true",
+        help="Use vLLM acceleration for stages 4–6 (LLaVA only)",
+    )
+    p.add_argument(
+        "--num_shards", type=int, default=1, help="Total number of parallel shards"
+    )
+    p.add_argument(
+        "--shard_id",
+        type=int,
+        default=0,
+        help="Which shard this process handles (0-indexed)",
+    )
+    p.add_argument(
+        "--stage6_only",
+        action="store_true",
+        help="Skip stages 1–5; run stage 6 on existing results_s5.jsonl",
+    )
+    p.add_argument(
+        "--retry_failed",
+        action="store_true",
+        help="Re-run stage 6 only for rows with answer=None (implies --stage6_only)",
+    )
+    p.add_argument(
+        "--rag_threshold",
+        type=float,
+        default=30.0,
+        help="Max distance (km) for a RAG hit to be included in the stage-6 prompt",
+    )
     return p.parse_args()
 
 

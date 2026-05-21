@@ -14,7 +14,7 @@ Ablation modes (mutually exclusive)
 Usage::
 
     python pipeline/ablation.py \\
-        --dataset_path dataset/im2gps3k_rgb_images \\
+        --dataset_path dataset/im2gps3k \\
         --model qwen \\
         --output_path output/ablation \\
         --results_filename ablation_wo_reasoning.jsonl \\
@@ -28,14 +28,13 @@ and results_s5.jsonl in --output_path.
 
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import argparse
 import glob
 import logging
 import os
-
-from tqdm import tqdm
 
 import prompts
 from llm import load_model, load_sft_model
@@ -66,6 +65,7 @@ class Ablation:
         results_filename: str,
         model_path: str,
         ckpt_dir: str,
+        use_vllm: bool = False,
     ):
         self.dataset_path = dataset_path
         self.model_type = model_type
@@ -73,7 +73,7 @@ class Ablation:
         self.results_filename = results_filename
         self.model_path = model_path
         self.ckpt_dir = ckpt_dir
-        self.base_model = load_model(model_type, model_path)
+        self.base_model = load_model(model_type, model_path, use_vllm=use_vllm)
 
     def _image_path(self, row: dict) -> str:
         return os.path.join(self.dataset_path, "images", row["ID"] + ".jpg")
@@ -90,10 +90,10 @@ class Ablation:
             else self.base_model
         )
         data = load_data(os.path.join(self.dataset_path, "meta.jsonl"))
-        for row in tqdm(data, desc="Stage 1"):
-            row["image_reason"] = reasoning_model.base_inference(
-                prompts.reasoning_prompt, self._image_path(row)
-            )
+        requests = [(prompts.reasoning_prompt, self._image_path(row)) for row in data]
+        responses = reasoning_model.batch_inference(requests)
+        for row, response in zip(data, responses):
+            row["image_reason"] = response
             yield row
 
     def guess_coordinates(
@@ -108,18 +108,28 @@ class Ablation:
         disabled for ablation."""
         logger.info(
             "Stage 6 — Guessing (reasoning=%s, osm=%s, rag=%s, comment=%s)",
-            include_reasoning, include_osm, include_rag, include_comment,
+            include_reasoning,
+            include_osm,
+            include_rag,
+            include_comment,
         )
         data = load_data(load_file)
-        for row in tqdm(data, desc="Stage 6"):
-            query, usage = build_guess_query(
+        queries_usages = [
+            build_guess_query(
                 row,
                 include_reasoning=include_reasoning,
                 include_osm=include_osm,
                 include_rag=include_rag,
                 include_comment=include_comment,
             )
-            raw = self.base_model.base_inference(query, self._image_path(row))
+            for row in data
+        ]
+        requests = [
+            (query, self._image_path(row))
+            for (query, _), row in zip(queries_usages, data)
+        ]
+        responses = self.base_model.batch_inference(requests)
+        for row, (_, usage), raw in zip(data, queries_usages, responses):
             row["answer"] = parse_json(raw)
             row["usage"] = usage
             yield row
@@ -146,30 +156,54 @@ class Ablation:
             except Exception:
                 continue
         if total:
-            print(f"Country match: {country_correct/total:.4f} ({country_correct}/{total})")
+            print(
+                f"Country match: {country_correct/total:.4f} ({country_correct}/{total})"
+            )
             print(f"City match   : {city_correct/total:.4f} ({city_correct}/{total})")
 
 
 def parse_args():
-    p = argparse.ArgumentParser(description=__doc__,
-                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    p = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     p.add_argument("--dataset_path", type=str, required=True)
-    p.add_argument("--model", type=str, default="qwen",
-                   choices=["qwen", "llava", "cpm", "llama32vision", "deepseek", "falcon"])
+    p.add_argument(
+        "--model",
+        type=str,
+        default="qwen",
+        choices=["qwen", "llava", "cpm", "llama32vision", "deepseek", "falcon"],
+    )
     p.add_argument("--output_path", type=str, default=".")
     p.add_argument("--results_filename", type=str, default="ablation_results.jsonl")
     p.add_argument("--model_path", type=str, required=True)
     p.add_argument("--ckpt_dir", type=str, default=None)
+    p.add_argument(
+        "--use_vllm",
+        action="store_true",
+        help="Use vLLM acceleration for llava and qwen base models",
+    )
 
     group = p.add_mutually_exclusive_group(required=True)
-    group.add_argument("--without_reasoning", action="store_true",
-                       help="Disable SFT reasoning; use OSM, RAG, comment only")
-    group.add_argument("--without_tools", action="store_true",
-                       help="Disable OSM, RAG, comment; use SFT reasoning only")
-    group.add_argument("--base_reasoning", action="store_true",
-                       help="Replace SFT reasoning with base-model reasoning")
-    group.add_argument("--direct_guess", action="store_true",
-                       help="No evidence at all; raw image → coordinates")
+    group.add_argument(
+        "--without_reasoning",
+        action="store_true",
+        help="Disable SFT reasoning; use OSM, RAG, comment only",
+    )
+    group.add_argument(
+        "--without_tools",
+        action="store_true",
+        help="Disable OSM, RAG, comment; use SFT reasoning only",
+    )
+    group.add_argument(
+        "--base_reasoning",
+        action="store_true",
+        help="Replace SFT reasoning with base-model reasoning",
+    )
+    group.add_argument(
+        "--direct_guess",
+        action="store_true",
+        help="No evidence at all; raw image → coordinates",
+    )
     return p.parse_args()
 
 
@@ -184,21 +218,28 @@ if __name__ == "__main__":
         results_filename=args.results_filename,
         model_path=args.model_path,
         ckpt_dir=args.ckpt_dir or "",
+        use_vllm=args.use_vllm,
     )
 
     if args.without_reasoning:
         s5 = _find_file("results_s5.jsonl", args.output_path)
         if not s5:
-            print("ERROR: results_s5.jsonl not found. Run pipeline/evaluation.py first.")
+            print(
+                "ERROR: results_s5.jsonl not found. Run pipeline/evaluation.py first."
+            )
             sys.exit(1)
         ablation._run_guess(s5, include_reasoning=False)
 
     elif args.without_tools:
         s1 = _find_file("results_s1.jsonl", args.output_path)
         if not s1:
-            print("ERROR: results_s1.jsonl not found. Run pipeline/evaluation.py first.")
+            print(
+                "ERROR: results_s1.jsonl not found. Run pipeline/evaluation.py first."
+            )
             sys.exit(1)
-        ablation._run_guess(s1, include_osm=False, include_rag=False, include_comment=False)
+        ablation._run_guess(
+            s1, include_osm=False, include_rag=False, include_comment=False
+        )
 
     elif args.base_reasoning:
         s1_base = os.path.join(args.output_path, "results_s1_base.jsonl")

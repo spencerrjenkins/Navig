@@ -4,7 +4,7 @@
 Usage::
 
     python analysis/merge_shards.py \\
-        --base_dir output/im2gps3k_rgb_images \\
+        --base_dir output/im2gps3k \\
         --num_shards 4 \\
         --results_file results_s6_qwen.jsonl \\
         --output merged_results_qwen.jsonl
@@ -12,6 +12,7 @@ Usage::
 
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import argparse
@@ -22,17 +23,34 @@ from metrics import score_results, print_score_summary
 
 
 def main():
-    p = argparse.ArgumentParser(description=__doc__,
-                                formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--base_dir", type=str, required=True,
-                   help="Directory containing shard subdirectories")
+    p = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    p.add_argument(
+        "--base_dir",
+        type=str,
+        required=True,
+        help="Directory containing shard subdirectories",
+    )
     p.add_argument("--num_shards", type=int, required=True)
-    p.add_argument("--results_file", type=str, default="results_s6_llava.jsonl",
-                   help="Filename to merge from each shard directory")
-    p.add_argument("--output", type=str, default="merged_results.jsonl",
-                   help="Output filename (written inside --base_dir)")
-    p.add_argument("--shard_prefix", type=str, default="shard",
-                   help='Directory prefix for shard folders (default: "shard" → shard_0_of_4)')
+    p.add_argument(
+        "--results_file",
+        type=str,
+        default="results_s6_llava.jsonl",
+        help="Filename to merge from each shard directory",
+    )
+    p.add_argument(
+        "--output",
+        type=str,
+        default="merged_results.jsonl",
+        help="Output filename (written inside --base_dir)",
+    )
+    p.add_argument(
+        "--shard_prefix",
+        type=str,
+        default="shard",
+        help='Directory prefix for shard folders (default: "shard" → shard_0_of_4)',
+    )
     args = p.parse_args()
 
     rows = []

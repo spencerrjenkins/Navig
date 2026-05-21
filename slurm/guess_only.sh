@@ -21,7 +21,7 @@
 #      in each shard directory.
 #   2. Merge the sharded s5 files into a single file:
 #          python analysis/merge_shards.py \
-#              --base_dir output/im2gps3k_rgb_images \
+#              --base_dir output/im2gps3k \
 #              --num_shards 4 \
 #              --results_file results_s5.jsonl \
 #              --output merged_s5.jsonl
@@ -79,7 +79,7 @@ python3 pipeline/guess_only.py \
 
 # After all 4 array tasks complete, merge and score with:
 #   python analysis/merge_shards.py \
-#       --base_dir output/im2gps3k_rgb_images \
+#       --base_dir output/im2gps3k \
 #       --num_shards 4 \
 #       --results_file ${RESULTS_NAME} \
 #       --shard_prefix guess_shard \

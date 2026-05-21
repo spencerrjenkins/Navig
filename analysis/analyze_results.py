@@ -13,8 +13,8 @@ Sections produced:
 Usage — auto-discover mode (recommended after merge_all_shards.py)::
 
     python analysis/analyze_results.py \\
-        --dir output/im2gps3k_rgb_images \\
-        --output output/im2gps3k_rgb_images/comparison_report.txt
+        --dir output/im2gps3k \\
+        --output output/im2gps3k/comparison_report.txt
 
 Usage — explicit mode::
 
@@ -26,6 +26,7 @@ Usage — explicit mode::
 
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import argparse
@@ -36,41 +37,68 @@ from collections import Counter, defaultdict
 
 import numpy as np
 
-from metrics import geoscore, haversine_distance, parse_coord, THRESHOLDS, THRESHOLD_NAMES
+from metrics import (
+    geoscore,
+    haversine_distance,
+    parse_coord,
+    THRESHOLDS,
+    THRESHOLD_NAMES,
+)
 
 # ── Canonical model registry ───────────────────────────────────────────────────
-BASE_DIR = "output/im2gps3k_rgb_images"
+BASE_DIR = "output/im2gps3k"
 CANONICAL_MODELS = [
     # Zero-shot models (no NAVIG SFT adapter)
-    {"path": f"{BASE_DIR}/cmp_shard_llama32vision_merged/results_s6_llama32vision.jsonl",
-     "label": "LLaMA-3.2-11B"},
-    {"path": f"{BASE_DIR}/cmp_shard_deepseek_merged/results_s6_deepseek.jsonl",
-     "label": "DeepSeek-7B"},
-    {"path": f"{BASE_DIR}/cmp_shard_falcon_merged/results_s6_falcon.jsonl",
-     "label": "Falcon-11B"},
+    {
+        "path": f"{BASE_DIR}/cmp_shard_llama32vision_merged/results_s6_llama32vision.jsonl",
+        "label": "LLaMA-3.2-11B",
+    },
+    {
+        "path": f"{BASE_DIR}/cmp_shard_deepseek_merged/results_s6_deepseek.jsonl",
+        "label": "DeepSeek-7B",
+    },
+    {
+        "path": f"{BASE_DIR}/cmp_shard_falcon_merged/results_s6_falcon.jsonl",
+        "label": "Falcon-11B",
+    },
     # Base models — no NAVIG LoRA for stage-1 reasoning
-    {"path": f"{BASE_DIR}/cmp_shard_llava_merged/results_s6_llava.jsonl",
-     "label": "LLaVA-1.6"},
-    {"path": f"{BASE_DIR}/cmp_shard_cpm_merged/results_s6_cpm.jsonl",
-     "label": "MiniCPM-V-2.6"},
-    {"path": f"{BASE_DIR}/cmp_shard_qwen_merged/results_s6_qwen.jsonl",
-     "label": "Qwen2.5-VL-7B"},
+    {
+        "path": f"{BASE_DIR}/cmp_shard_llava_merged/results_s6_llava.jsonl",
+        "label": "LLaVA-1.6",
+    },
+    {
+        "path": f"{BASE_DIR}/cmp_shard_cpm_merged/results_s6_cpm.jsonl",
+        "label": "MiniCPM-V-2.6",
+    },
+    {
+        "path": f"{BASE_DIR}/cmp_shard_qwen_merged/results_s6_qwen.jsonl",
+        "label": "Qwen2.5-VL-7B",
+    },
     # SFT models — NAVIG LoRA adapter for stage-1 reasoning
-    {"path": f"{BASE_DIR}/cmp_shard_llava_sft_merged/results_s6_llava_sft.jsonl",
-     "label": "LLaVA-1.6 (SFT)"},
-    {"path": f"{BASE_DIR}/cmp_shard_cpm_sft_merged/results_s6_cpm_sft.jsonl",
-     "label": "MiniCPM-V-2.6 (SFT)"},
-    {"path": f"{BASE_DIR}/cmp_shard_qwen_sft_merged/results_s6_qwen_sft.jsonl",
-     "label": "Qwen2.5-VL-7B (SFT)"},
+    {
+        "path": f"{BASE_DIR}/cmp_shard_llava_sft_merged/results_s6_llava_sft.jsonl",
+        "label": "LLaVA-1.6 (SFT)",
+    },
+    {
+        "path": f"{BASE_DIR}/cmp_shard_cpm_sft_merged/results_s6_cpm_sft.jsonl",
+        "label": "MiniCPM-V-2.6 (SFT)",
+    },
+    {
+        "path": f"{BASE_DIR}/cmp_shard_qwen_sft_merged/results_s6_qwen_sft.jsonl",
+        "label": "Qwen2.5-VL-7B (SFT)",
+    },
     # Swap experiment: LLaMA-3.2-11B runs only stage 6 on existing pipeline evidence
-    {"path": f"{BASE_DIR}/guess_merged/results_s6_llama32vision.jsonl",
-     "label": "LLaMA-3.2-11B (swap)"},
+    {
+        "path": f"{BASE_DIR}/guess_merged/results_s6_llama32vision.jsonl",
+        "label": "LLaMA-3.2-11B (swap)",
+    },
 ]
 
 THR_NAMES = [f"@{t}km" for t in THRESHOLDS]
 
 
 # ── Geo utilities ──────────────────────────────────────────────────────────────
+
 
 def get_dist(row: dict) -> tuple[float, bool]:
     correct = [float(row["LAT"]), float(row["LON"])]
@@ -108,6 +136,7 @@ def lat_to_continent(lat: float, lon: float) -> str:
 
 # ── Data loading ───────────────────────────────────────────────────────────────
 
+
 def load_results(path: str) -> dict[str, dict] | None:
     try:
         rows = {}
@@ -123,6 +152,7 @@ def load_results(path: str) -> dict[str, dict] | None:
 
 
 # ── Scoring helpers ────────────────────────────────────────────────────────────
+
 
 def score_rows(rows_list: list[dict]) -> tuple[list[float], int]:
     dists, fails = [], 0
@@ -149,6 +179,7 @@ def summary_stats(dists: list[float], n_total: int) -> dict:
 
 
 # ── Report sections ────────────────────────────────────────────────────────────
+
 
 def section(out, title: str) -> None:
     out.write("\n" + "=" * 80 + "\n")
@@ -184,7 +215,9 @@ def sec1_overall(out, models: list[dict]) -> None:
 def sec2_distribution(out, models: list[dict]) -> None:
     section(out, "2. DISTANCE DISTRIBUTION (km)")
     col = max(len(m["label"]) for m in models) + 2
-    header = f"{'Model':<{col}} {'P25':>8}  {'P50':>8}  {'P75':>8}  {'P90':>8}  {'P95':>8}"
+    header = (
+        f"{'Model':<{col}} {'P25':>8}  {'P50':>8}  {'P75':>8}  {'P90':>8}  {'P95':>8}"
+    )
     out.write(header + "\n")
     out.write("-" * len(header) + "\n")
     for m in models:
@@ -260,9 +293,14 @@ def sec5_failures(out, models: list[dict]) -> None:
     out.write(hdr)
     out.write("  " + "-" * (len(hdr) - 3) + "\n")
     for m in models:
-        success_dists = [get_dist(row)[0] for row in m["rows"].values()
-                         if not get_dist(row)[1]]
-        gs_excl = np.mean([geoscore(d) for d in success_dists]) if success_dists else float("nan")
+        success_dists = [
+            get_dist(row)[0] for row in m["rows"].values() if not get_dist(row)[1]
+        ]
+        gs_excl = (
+            np.mean([geoscore(d) for d in success_dists])
+            if success_dists
+            else float("nan")
+        )
         out.write(
             f"  {m['label']:<{col}} {m['stats']['n']:>5}  {m['failures']:>9}  "
             f"{100*m['failures']/m['stats']['n']:>6.1f}%  {gs_excl:>18.2f}\n"
@@ -290,10 +328,14 @@ def sec6_agreement(out, models: list[dict], common_ids: list[str]) -> None:
             if ra is None or rb is None:
                 continue
             try:
-                pred_a = [parse_coord(ra["answer"]["latitude"]),
-                          parse_coord(ra["answer"]["longitude"])]
-                pred_b = [parse_coord(rb["answer"]["latitude"]),
-                          parse_coord(rb["answer"]["longitude"])]
+                pred_a = [
+                    parse_coord(ra["answer"]["latitude"]),
+                    parse_coord(ra["answer"]["longitude"]),
+                ]
+                pred_b = [
+                    parse_coord(rb["answer"]["latitude"]),
+                    parse_coord(rb["answer"]["longitude"]),
+                ]
                 d = haversine_distance(pred_a, pred_b)
                 for k, t in enumerate(thresholds):
                     if d <= t:
@@ -308,19 +350,27 @@ def sec6_agreement(out, models: list[dict], common_ids: list[str]) -> None:
 
 
 def sec7_hard_easy(out, models: list[dict], common_ids: list[str], k: int = 15) -> None:
-    section(out, f"7. HARDEST AND EASIEST IMAGES (avg distance across all models, top {k})")
+    section(
+        out, f"7. HARDEST AND EASIEST IMAGES (avg distance across all models, top {k})"
+    )
     avg_dists = {
-        img_id: np.mean([get_dist(m["rows"][img_id])[0]
-                          for m in models if img_id in m["rows"]])
+        img_id: np.mean(
+            [get_dist(m["rows"][img_id])[0] for m in models if img_id in m["rows"]]
+        )
         for img_id in common_ids
     }
     sorted_ids = sorted(avg_dists, key=lambda x: avg_dists[x])
     col_id = min(max(len(i) for i in common_ids[:5]), 40)
 
     for title, ids in [("EASIEST", sorted_ids[:k]), ("HARDEST", sorted_ids[-k:][::-1])]:
-        out.write(f"\n  {title} (all models predict {'well' if title=='EASIEST' else 'poorly'})\n")
-        hdr = (f"  {'Image ID':<{col_id}}  {'AvgDist':>9}  "
-               + "  ".join(f"{m['label'][:9]:>9}" for m in models) + "\n")
+        out.write(
+            f"\n  {title} (all models predict {'well' if title=='EASIEST' else 'poorly'})\n"
+        )
+        hdr = (
+            f"  {'Image ID':<{col_id}}  {'AvgDist':>9}  "
+            + "  ".join(f"{m['label'][:9]:>9}" for m in models)
+            + "\n"
+        )
         out.write(hdr)
         out.write("  " + "-" * (len(hdr) - 3) + "\n")
         for img_id in ids:
@@ -336,19 +386,24 @@ def sec7_hard_easy(out, models: list[dict], common_ids: list[str], k: int = 15) 
 
 # ── Auto-discovery ─────────────────────────────────────────────────────────────
 
+
 def discover_files(directory: str) -> tuple[list[str], list[str]]:
     root = Path(directory)
     if not root.is_dir():
         print(f"ERROR: {root} is not a directory", file=sys.stderr)
         sys.exit(1)
     triples = []
-    for merged_dir in sorted(d for d in root.iterdir()
-                             if d.is_dir() and d.name.endswith("_merged")):
+    for merged_dir in sorted(
+        d for d in root.iterdir() if d.is_dir() and d.name.endswith("_merged")
+    ):
         for f in sorted(merged_dir.glob("results_s6_*.jsonl")):
-            base_label = f.stem[len("results_s6_"):]
+            base_label = f.stem[len("results_s6_") :]
             triples.append((str(f), base_label, merged_dir.name))
     if not triples:
-        print(f"No results_s6_*.jsonl found in *_merged/ subdirs of {root}", file=sys.stderr)
+        print(
+            f"No results_s6_*.jsonl found in *_merged/ subdirs of {root}",
+            file=sys.stderr,
+        )
         sys.exit(1)
     counts = Counter(t[1] for t in triples)
     files, labels = [], []
@@ -361,24 +416,36 @@ def discover_files(directory: str) -> tuple[list[str], list[str]]:
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+
 def main():
-    p = argparse.ArgumentParser(description=__doc__,
-                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    p = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     src = p.add_mutually_exclusive_group(required=True)
-    src.add_argument("--canonical", action="store_true",
-                     help="Use the built-in 7-model canonical registry")
-    src.add_argument("--dir", type=str,
-                     help="Directory to scan for *_merged/results_s6_*.jsonl")
-    src.add_argument("--files", nargs="+",
-                     help="Explicit merged result JSONL files, one per model")
-    p.add_argument("--labels", nargs="*",
-                   help="Display names (must match --files count)")
-    p.add_argument("--output", type=str, default=None,
-                   help="Save report to this file (also always prints to stdout)")
+    src.add_argument(
+        "--canonical",
+        action="store_true",
+        help="Use the built-in 7-model canonical registry",
+    )
+    src.add_argument(
+        "--dir", type=str, help="Directory to scan for *_merged/results_s6_*.jsonl"
+    )
+    src.add_argument(
+        "--files", nargs="+", help="Explicit merged result JSONL files, one per model"
+    )
+    p.add_argument(
+        "--labels", nargs="*", help="Display names (must match --files count)"
+    )
+    p.add_argument(
+        "--output",
+        type=str,
+        default=None,
+        help="Save report to this file (also always prints to stdout)",
+    )
     args = p.parse_args()
 
     if args.canonical:
-        files  = [m["path"]  for m in CANONICAL_MODELS]
+        files = [m["path"] for m in CANONICAL_MODELS]
         labels = [m["label"] for m in CANONICAL_MODELS]
         print(f"Using canonical {len(CANONICAL_MODELS)}-model registry:")
         for f, l in zip(files, labels):
@@ -403,13 +470,15 @@ def main():
             print(f"WARNING: {path} not found, skipping.", file=sys.stderr)
             continue
         dists, failures = score_rows(list(rows.values()))
-        models.append({
-            "label": label,
-            "rows": rows,
-            "dists": dists,
-            "failures": failures,
-            "stats": summary_stats(dists, len(rows)),
-        })
+        models.append(
+            {
+                "label": label,
+                "rows": rows,
+                "dists": dists,
+                "failures": failures,
+                "stats": summary_stats(dists, len(rows)),
+            }
+        )
 
     if not models:
         print("No valid result files found.")

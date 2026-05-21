@@ -28,6 +28,7 @@ import base64
 
 from openai import OpenAI
 from configuration import Config
+from tqdm import tqdm
 
 
 def _fix_llava_next_processor(tokenizer) -> None:
@@ -43,9 +44,25 @@ def _fix_llava_next_processor(tokenizer) -> None:
             obj.vision_feature_select_strategy = "default"
 
 
+# ── Batch inference mixin ─────────────────────────────────────────────────────
+
+class _BatchMixin:
+    """Sequential fallback for models without native batching.
+
+    vLLM subclasses override batch_inference with a single generate() call.
+    Swift-based models fall back here, processing one sample at a time with
+    a tqdm progress bar so stage progress remains visible.
+    """
+    def batch_inference(self, items: list[tuple[str, "str | None"]]) -> list[str]:
+        return [
+            self.base_inference(q, img)
+            for q, img in tqdm(items, desc="inference", leave=False)
+        ]
+
+
 # ── LLaVA-1.6-Vicuna-7B ───────────────────────────────────────────────────────
 
-class LLaVA:
+class LLaVA(_BatchMixin):
     def __init__(self, model_path: str = "vlms/llava/llava-v1.6-vicuna-7b-hf"):
         self.model_type = "llava1_6-vicuna-7b-instruct"
         self.template_type = get_default_template_type(self.model_type)
@@ -66,7 +83,7 @@ class LLaVA:
         return response
 
 
-class LLaVA_sft:
+class LLaVA_sft(_BatchMixin):
     def __init__(
         self,
         model_path: str = "vlms/llava/llava-v1.6-vicuna-7b-hf",
@@ -93,15 +110,30 @@ class LLaVA_sft:
 
 # ── Qwen2-VL-7B-Instruct ──────────────────────────────────────────────────────
 
-class Qwen:
+class Qwen(_BatchMixin):
     def __init__(self, model_path: str = "vlms/qwen/Qwen2-VL-7B-Instruct"):
         self.model_type = "qwen2-vl-7b-instruct"
         self.template_type = get_default_template_type(self.model_type)
+        # Swift 2.5.0 bug: Qwen2VLTemplate._get_generate_ids slices at the
+        # expanded input length, but model.generate(inputs_embeds=...) returns
+        # only the newly generated token IDs — slicing yields an empty list.
+        # Patch to return all tokens (same fix already present in OVIS1_6Template).
+        try:
+            from swift.llm.utils.template import Qwen2VLTemplate
+            Qwen2VLTemplate._get_generate_ids = staticmethod(lambda ids, _: ids)
+        except (ImportError, AttributeError):
+            pass
         seed_everything(42)
         self.model, self.tokenizer = get_model_tokenizer(
             self.model_type, torch.float16,
             model_id_or_path=model_path, model_kwargs={"device_map": "auto"},
         )
+        # The base model ships generation_config.json with top_k=1/temperature=0.01
+        # which collapses sampling and causes near-immediate EOS; reset to greedy.
+        self.model.generation_config.do_sample = False
+        self.model.generation_config.top_k = 0
+        self.model.generation_config.top_p = 1.0
+        self.model.generation_config.temperature = 1.0
         self.model.generation_config.max_new_tokens = 256
         self.template = get_template(self.template_type, self.tokenizer)
 
@@ -113,7 +145,7 @@ class Qwen:
         return response
 
 
-class Qwen_sft:
+class Qwen_sft(_BatchMixin):
     def __init__(
         self,
         model_path: str = "vlms/qwen/Qwen2-VL-7B-Instruct",
@@ -121,6 +153,12 @@ class Qwen_sft:
     ):
         self.model_type = "qwen2-vl-7b-instruct"
         self.template_type = get_default_template_type(self.model_type)
+        # Same Swift 2.5.0 _get_generate_ids patch as Qwen base class.
+        try:
+            from swift.llm.utils.template import Qwen2VLTemplate
+            Qwen2VLTemplate._get_generate_ids = staticmethod(lambda ids, _: ids)
+        except (ImportError, AttributeError):
+            pass
         seed_everything(42)
         self.model, self.tokenizer = get_model_tokenizer(
             self.model_type, torch.float16,
@@ -148,7 +186,7 @@ class Qwen_sft:
 
 # ── MiniCPM-V-2.6 ─────────────────────────────────────────────────────────────
 
-class CPM:
+class CPM(_BatchMixin):
     def __init__(self, model_path: str = "vlms/cpm/MiniCPM-V-2_6"):
         self.model_type = "minicpm-v-v2_6-chat"
         self.template_type = get_default_template_type(self.model_type)
@@ -168,7 +206,7 @@ class CPM:
         return response
 
 
-class CPM_sft:
+class CPM_sft(_BatchMixin):
     def __init__(
         self,
         model_path: str = "vlms/cpm/MiniCPM-V-2_6",
@@ -211,20 +249,23 @@ class LLaVA_vllm:
         self.llm = LLM(model=model_path, dtype="float16", max_model_len=4096)
         self.sampling_params = SamplingParams(max_tokens=256, temperature=0)
 
-    def base_inference(self, query: str, image_path=None) -> str:
+    def batch_inference(self, items: list[tuple[str, "str | None"]]) -> list[str]:
         from PIL import Image as PILImage
-        prompt = _LLAVA_VICUNA_PROMPT.format(query=query)
-        if image_path:
-            if isinstance(image_path, list):
-                image_path = image_path[0]
-            img = PILImage.open(image_path).convert("RGB")
-            outputs = self.llm.generate(
-                {"prompt": prompt, "multi_modal_data": {"image": img}},
-                self.sampling_params,
-            )
-        else:
-            outputs = self.llm.generate(prompt, self.sampling_params)
-        return outputs[0].outputs[0].text
+        requests = []
+        for query, image_path in items:
+            prompt = _LLAVA_VICUNA_PROMPT.format(query=query)
+            if image_path:
+                if isinstance(image_path, list):
+                    image_path = image_path[0]
+                img = PILImage.open(image_path).convert("RGB")
+                requests.append({"prompt": prompt, "multi_modal_data": {"image": img}})
+            else:
+                requests.append(prompt)
+        outputs = self.llm.generate(requests, self.sampling_params)
+        return [o.outputs[0].text for o in outputs]
+
+    def base_inference(self, query: str, image_path=None) -> str:
+        return self.batch_inference([(query, image_path)])[0]
 
 
 # ── Experimental: vLLM + LoRA for stage 1 ────────────────────────────────────
@@ -263,9 +304,60 @@ class LLaVA_sft_vllm:
         return outputs[0].outputs[0].text
 
 
+# ── vLLM-accelerated Qwen2-VL (base model, stages 4–6) ───────────────────────
+
+# Qwen2-VL / Qwen2.5-VL chat template with single image placeholder.
+# vLLM expands <|image_pad|> to the correct number of vision tokens internally.
+_QWEN_VL_PROMPT = (
+    "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n"
+    "<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>{query}<|im_end|>\n"
+    "<|im_start|>assistant\n"
+)
+_QWEN_VL_PROMPT_NO_IMAGE = (
+    "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n"
+    "<|im_start|>user\n{query}<|im_end|>\n"
+    "<|im_start|>assistant\n"
+)
+
+
+class Qwen_vllm:
+    """vLLM-accelerated Qwen2-VL / Qwen2.5-VL base model for stages 4/5/6 (--use_vllm)."""
+
+    def __init__(self, model_path: str = "vlms/qwen/Qwen2-VL-7B-Instruct"):
+        from vllm import LLM, SamplingParams
+        seed_everything(42)
+        self.llm = LLM(
+            model=model_path,
+            dtype="float16",
+            max_model_len=4096,
+            limit_mm_per_prompt={"image": 1},
+        )
+        self.sampling_params = SamplingParams(max_tokens=256, temperature=0)
+
+    def batch_inference(self, items: list[tuple[str, "str | None"]]) -> list[str]:
+        from PIL import Image as PILImage
+        requests = []
+        for query, image_path in items:
+            if image_path:
+                if isinstance(image_path, list):
+                    image_path = image_path[0]
+                img = PILImage.open(image_path).convert("RGB")
+                requests.append({
+                    "prompt": _QWEN_VL_PROMPT.format(query=query),
+                    "multi_modal_data": {"image": img},
+                })
+            else:
+                requests.append(_QWEN_VL_PROMPT_NO_IMAGE.format(query=query))
+        outputs = self.llm.generate(requests, self.sampling_params)
+        return [o.outputs[0].text for o in outputs]
+
+    def base_inference(self, query: str, image_path=None) -> str:
+        return self.batch_inference([(query, image_path)])[0]
+
+
 # ── Llama-3.2-11B-Vision-Instruct ─────────────────────────────────────────────
 
-class Llama32Vision:
+class Llama32Vision(_BatchMixin):
     """Llama-3.2-11B-Vision-Instruct via ms-Swift (stage-6 swap experiment).
 
     Download::
@@ -295,7 +387,7 @@ class Llama32Vision:
 
 # ── InternVL2-8B ──────────────────────────────────────────────────────────────
 
-class InternVL2:
+class InternVL2(_BatchMixin):
     """InternVL2-8B via ms-Swift (strong OCR; stage-6 swap experiment).
 
     Download::
@@ -325,7 +417,7 @@ class InternVL2:
 
 # ── DeepSeek-VL-7B-Chat ───────────────────────────────────────────────────────
 
-class DeepSeekVL:
+class DeepSeekVL(_BatchMixin):
     """DeepSeek-VL-7B-Chat via ms-Swift (zero-shot stage-6 guesser).
 
     Download::
@@ -355,7 +447,7 @@ class DeepSeekVL:
 
 # ── Falcon-11B-VLM ────────────────────────────────────────────────────────────
 
-class FalconVLM:
+class FalconVLM(_BatchMixin):
     """Falcon-11B-VLM via HuggingFace Transformers (ms-Swift does not support it).
 
     Built on LLaVA-NeXT architecture.  Requires custom embedding resize to
@@ -373,6 +465,7 @@ class FalconVLM:
 
         seed_everything(42)
         self.processor = LlavaNextProcessor.from_pretrained(model_path)
+        _fix_llava_next_processor(self.processor)
         self.model = LlavaNextForConditionalGeneration.from_pretrained(
             model_path, torch_dtype=torch.float16, device_map="auto"
         )
@@ -433,7 +526,7 @@ def load_model(
     internvl2, deepseek, falcon.
 
     ``ckpt_dir`` is required for SFT variants (cpm_sft).
-    ``use_vllm`` enables vLLM acceleration for the llava base model.
+    ``use_vllm`` enables vLLM acceleration for llava and qwen base models.
     """
     if model_name == "llava":
         return (
@@ -442,7 +535,11 @@ def load_model(
             else LLaVA(model_path=model_path)
         )
     if model_name == "qwen":
-        return Qwen(model_path=model_path)
+        return (
+            Qwen_vllm(model_path=model_path)
+            if use_vllm
+            else Qwen(model_path=model_path)
+        )
     if model_name == "cpm":
         return CPM(model_path=model_path)
     if model_name == "cpm_sft":

@@ -27,11 +27,11 @@ cd /nfshomes/srjnk01/Navig
 
 NUM_SHARDS=4
 SHARD_ID=${SLURM_ARRAY_TASK_ID}
-SHARD_OUTPUT=output/im2gps3k_rgb_images/qwen_shard_${SHARD_ID}_of_${NUM_SHARDS}
+SHARD_OUTPUT=output/im2gps3k/qwen_shard_${SHARD_ID}_of_${NUM_SHARDS}
 
 python3 pipeline/evaluation.py \
     --model "qwen" \
-    --dataset_path dataset/im2gps3k_rgb_images \
+    --dataset_path dataset/im2gps3k \
     --output_path ${SHARD_OUTPUT} \
     --results_filename "results_s6_qwen.jsonl" \
     --box_threshold 0.3 \
@@ -39,5 +39,4 @@ python3 pipeline/evaluation.py \
     --model_path /fs/nexus-scratch/srjnk01/Qwen2.5-VL-7B-Instruct \
     --ckpt_dir vlms/NAVIG/qwen2-vl-7b-instruct \
     --num_shards ${NUM_SHARDS} \
-    --shard_id ${SHARD_ID} \
-    --use_vllm
+    --shard_id ${SHARD_ID}

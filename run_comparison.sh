@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=comparison
-#SBATCH --output=logs/comparison-%j.out
-#SBATCH --error=logs/comparison-%j.err
+#SBATCH --output=logs/im2gps200/comparison-%j.out
+#SBATCH --error=logs/im2gps200/comparison-%j.err
 #SBATCH --time=00:10:00
 #SBATCH --account=nexus
 #SBATCH --partition=tron
@@ -31,7 +31,7 @@
 # SKIP LOGIC
 # ----------
 # A model is skipped if results_s5.jsonl already exists in ALL shard dirs:
-#   output/im2gps3k_rgb_images/cmp_shard_<model>_{0..N-1}_of_N/results_s5.jsonl
+#   output/im2gps200/cmp_shard_<model>_{0..N-1}_of_N/results_s5.jsonl
 # This correctly distinguishes completed from preempted/partially-run shards.
 # Delete those files (or the whole shard dirs) to force a re-run.
 #
@@ -68,8 +68,8 @@ done
 cd /nfshomes/srjnk01/Navig
 mkdir -p logs
 
-BASE_DIR=output/im2gps3k_rgb_images
-DATASET=dataset/im2gps3k_rgb_images
+BASE_DIR=output/im2gps200
+DATASET=dataset/im2gps200
 NUM_SHARDS=4
 
 # ── Model weight paths ───────────────────────────────────────────────────────
@@ -117,11 +117,12 @@ if [[ -n "${RERUN_STAGE6}" ]]; then
         *) echo "Unknown model key for --rerun_stage6: ${MODEL_KEY}" >&2; exit 1 ;;
     esac
     CKPT_ARG=""; [[ -n "${CKPT_DIR}" ]] && CKPT_ARG="--ckpt_dir ${CKPT_DIR}"
+    VLLM_FLAG=""; [[ "${MODEL_TYPE}" == "llava" ]] && VLLM_FLAG="--use_vllm"
     echo "==> Submitting stage-6-only rerun for ${MODEL_KEY} (${NUM_SHARDS} shards)..."
     sbatch --parsable \
         --job-name=s6-${MODEL_KEY} \
-        --output=logs/s6-${MODEL_KEY}-%j_%a.out \
-        --error=logs/s6-${MODEL_KEY}-%j_%a.err \
+        --output=logs/im2gps200/s6-${MODEL_KEY}-%j_%a.out \
+        --error=logs/im2gps200/s6-${MODEL_KEY}-%j_%a.err \
         --time=4:00:00 --account=nexus --partition=tron --qos=default \
         --nodes=1 --ntasks=1 --requeue \
         --gres=gpu:rtxa6000:1 --mem=32g \
@@ -133,6 +134,7 @@ python3 pipeline/evaluation.py \
     --model             ${MODEL_TYPE} \
     --model_path        ${MODEL_PATH} \
     ${CKPT_ARG} \
+    ${VLLM_FLAG} \
     --output_path       \${SHARD_OUT} \
     --results_filename  ${RESULTS_NAME} \
     --box_threshold     0.3 \
@@ -164,11 +166,12 @@ if [[ -n "${RETRY_FAILED}" ]]; then
         *) echo "Unknown model key for --retry_failed: ${MODEL_KEY}" >&2; exit 1 ;;
     esac
     CKPT_ARG=""; [[ -n "${CKPT_DIR}" ]] && CKPT_ARG="--ckpt_dir ${CKPT_DIR}"
+    VLLM_FLAG=""; [[ "${MODEL_TYPE}" == "llava" ]] && VLLM_FLAG="--use_vllm"
     echo "==> Submitting stage-6 retry-failed job for ${MODEL_KEY} (${NUM_SHARDS} shards)..."
     sbatch --parsable \
         --job-name=retry-${MODEL_KEY} \
-        --output=logs/retry-${MODEL_KEY}-%j_%a.out \
-        --error=logs/retry-${MODEL_KEY}-%j_%a.err \
+        --output=logs/im2gps200/retry-${MODEL_KEY}-%j_%a.out \
+        --error=logs/im2gps200/retry-${MODEL_KEY}-%j_%a.err \
         --time=2:00:00 --account=nexus --partition=tron --qos=default \
         --nodes=1 --ntasks=1 --requeue \
         --gres=gpu:rtxa6000:1 --mem=32g \
@@ -180,6 +183,7 @@ python3 pipeline/evaluation.py \
     --model             ${MODEL_TYPE} \
     --model_path        ${MODEL_PATH} \
     ${CKPT_ARG} \
+    ${VLLM_FLAG} \
     --output_path       \${SHARD_OUT} \
     --results_filename  ${RESULTS_NAME} \
     --box_threshold     0.3 \
@@ -220,12 +224,14 @@ submit_model() {
 
     local ckpt_arg=""
     [[ -n "${ckpt_dir}" ]] && ckpt_arg="--ckpt_dir ${ckpt_dir}"
+    local vllm_flag=""
+    [[ "${model_type}" == "llava" ]] && vllm_flag="--use_vllm"
 
     local jid
     jid=$(sbatch --parsable \
         --job-name=cmp-${model_key} \
-        --output=logs/cmp-${model_key}-%j_%a.out \
-        --error=logs/cmp-${model_key}-%j_%a.err \
+        --output=logs/im2gps200/cmp-${model_key}-%j_%a.out \
+        --error=logs/im2gps200/cmp-${model_key}-%j_%a.err \
         --time=24:00:00 --account=nexus --partition=tron --qos=default \
         --nodes=1 --ntasks=1 --requeue \
         --gres=gpu:rtxa6000:1 --mem=32g \
@@ -238,6 +244,7 @@ python3 pipeline/evaluation.py \\
     --model             ${model_type} \\
     --model_path        ${model_path} \\
     ${ckpt_arg} \\
+    ${vllm_flag} \\
     --output_path       \${SHARD_OUT} \\
     --results_filename  ${results_name} \\
     --box_threshold     0.3 \\
@@ -338,8 +345,8 @@ if [[ ${#EVAL_JOB_IDS[@]} -gt 0 ]]; then
     echo "==> Submitting merge+analysis job (depends on: ${EVAL_JOB_IDS[*]})..."
     MERGE_JID=$(sbatch --parsable \
         --job-name=analyze \
-        --output=logs/analyze-%j.out \
-        --error=logs/analyze-%j.err \
+        --output=logs/im2gps200/analyze-%j.out \
+        --error=logs/im2gps200/analyze-%j.err \
         --time=01:00:00 --account=nexus --partition=tron --qos=default \
         --nodes=1 --ntasks=1 --mem=32g \
         --dependency="${DEPEND}" \
@@ -385,6 +392,7 @@ if [[ "${NO_ABLATION}" == "false" ]]; then
         fi
 
         CKPT_ARG=""; [[ -n "${ckpt_dir}" ]] && CKPT_ARG="--ckpt_dir ${ckpt_dir}"
+        VLLM_FLAG=""; [[ "${model_type}" == "llava" || "${model_type}" == "qwen" ]] && VLLM_FLAG="--use_vllm"
         MERGED_DIR="${BASE_DIR}/cmp_shard_${model_key}_merged"
 
         DEPEND_ARG=""
@@ -392,8 +400,8 @@ if [[ "${NO_ABLATION}" == "false" ]]; then
 
         ABL_JID=$(sbatch --parsable \
             --job-name=abl-${model_key} \
-            --output=logs/abl-${model_key}-%j.out \
-            --error=logs/abl-${model_key}-%j.err \
+            --output=logs/im2gps200/abl-${model_key}-%j.out \
+            --error=logs/im2gps200/abl-${model_key}-%j.err \
             --time=12:00:00 --account=nexus --partition=tron --qos=default \
             --nodes=1 --ntasks=1 \
             --gres=gpu:rtxa6000:1 --mem=32g \
@@ -407,6 +415,7 @@ run_ablation() {
         --model            ${model_type} \\
         --model_path       ${model_path} \\
         ${CKPT_ARG} \\
+        ${VLLM_FLAG} \\
         --output_path      ${MERGED_DIR} \\
         --results_filename ablation_\${mode}.jsonl \\
         --\${mode} || echo \"WARNING: ablation \${mode} failed for ${model_key}\"

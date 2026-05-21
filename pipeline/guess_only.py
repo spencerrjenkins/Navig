@@ -14,18 +14,18 @@ Typical workflow
 2.  Merge the sharded s5 files::
 
         python analysis/merge_shards.py \\
-            --base_dir output/im2gps3k_rgb_images \\
+            --base_dir output/im2gps3k \\
             --num_shards 4 --results_file results_s5.jsonl \\
             --output merged_s5.jsonl
 
 3.  Run stage 6 with a new guesser (submit via slurm/guess_only.sh)::
 
         python pipeline/guess_only.py \\
-            --s5_path output/im2gps3k_rgb_images/merged_s5.jsonl \\
-            --dataset_path dataset/im2gps3k_rgb_images \\
+            --s5_path output/im2gps3k/merged_s5.jsonl \\
+            --dataset_path dataset/im2gps3k \\
             --model llama32vision \\
             --model_path /fs/nexus-scratch/$USER/llama-3.2-11b-vision-instruct \\
-            --output output/im2gps3k_rgb_images/results_s6_llama32.jsonl
+            --output output/im2gps3k/results_s6_llama32.jsonl
 
 4.  Compare results::
 
@@ -47,6 +47,7 @@ Supported --model choices
 
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import argparse
@@ -79,7 +80,9 @@ def run_guess(
     data = load_data(s5_path)
     if num_shards > 1:
         data = data[shard_id::num_shards]
-        logger.info("Shard %d/%d: processing %d samples", shard_id, num_shards, len(data))
+        logger.info(
+            "Shard %d/%d: processing %d samples", shard_id, num_shards, len(data)
+        )
 
     def _generate():
         for row in tqdm(data, desc="Stage 6"):
@@ -87,8 +90,13 @@ def run_guess(
             query, usage = build_guess_query(row, rag_threshold=rag_threshold)
             raw = model.base_inference(query, image)
             answer = parse_json(raw)
-            logger.debug("raw: %r  |  parsed: %s  |  gt: %s, %s",
-                         raw, answer, row["LAT"], row["LON"])
+            logger.debug(
+                "raw: %r  |  parsed: %s  |  gt: %s, %s",
+                raw,
+                answer,
+                row["LAT"],
+                row["LON"],
+            )
             row["answer"] = answer
             row["usage"] = usage
             yield row
@@ -101,25 +109,64 @@ def parse_args():
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    p.add_argument("--s5_path", type=str, required=True,
-                   help="Path to results_s5.jsonl (merged or single shard)")
-    p.add_argument("--dataset_path", type=str, required=True,
-                   help="Dataset root containing images/ subdirectory")
-    p.add_argument("--model", type=str, default="llama32vision",
-                   choices=["llava", "qwen", "cpm", "cpm_sft", "llama32vision",
-                            "internvl2", "deepseek", "falcon"])
-    p.add_argument("--model_path", type=str, required=True,
-                   help="Local path or HuggingFace model ID for the guesser model")
-    p.add_argument("--ckpt_dir", type=str, default=None,
-                   help="LoRA checkpoint directory (required for cpm_sft)")
-    p.add_argument("--output", type=str, required=True,
-                   help="Output JSONL path for stage-6 results")
+    p.add_argument(
+        "--s5_path",
+        type=str,
+        required=True,
+        help="Path to results_s5.jsonl (merged or single shard)",
+    )
+    p.add_argument(
+        "--dataset_path",
+        type=str,
+        required=True,
+        help="Dataset root containing images/ subdirectory",
+    )
+    p.add_argument(
+        "--model",
+        type=str,
+        default="llama32vision",
+        choices=[
+            "llava",
+            "qwen",
+            "cpm",
+            "cpm_sft",
+            "llama32vision",
+            "internvl2",
+            "deepseek",
+            "falcon",
+        ],
+    )
+    p.add_argument(
+        "--model_path",
+        type=str,
+        required=True,
+        help="Local path or HuggingFace model ID for the guesser model",
+    )
+    p.add_argument(
+        "--ckpt_dir",
+        type=str,
+        default=None,
+        help="LoRA checkpoint directory (required for cpm_sft)",
+    )
+    p.add_argument(
+        "--output",
+        type=str,
+        required=True,
+        help="Output JSONL path for stage-6 results",
+    )
     p.add_argument("--num_shards", type=int, default=1)
     p.add_argument("--shard_id", type=int, default=0)
-    p.add_argument("--score_only", action="store_true",
-                   help="Skip inference, just score an existing --output file")
-    p.add_argument("--rag_threshold", type=float, default=30.0,
-                   help="Max distance (km) for a RAG hit to be included in the stage-6 prompt")
+    p.add_argument(
+        "--score_only",
+        action="store_true",
+        help="Skip inference, just score an existing --output file",
+    )
+    p.add_argument(
+        "--rag_threshold",
+        type=float,
+        default=30.0,
+        help="Max distance (km) for a RAG hit to be included in the stage-6 prompt",
+    )
     return p.parse_args()
 
 
@@ -130,8 +177,12 @@ if __name__ == "__main__":
     if not args.score_only:
         model = load_model(args.model, args.model_path, ckpt_dir=args.ckpt_dir)
         run_guess(
-            args.s5_path, args.dataset_path, model,
-            args.output, args.shard_id, args.num_shards,
+            args.s5_path,
+            args.dataset_path,
+            model,
+            args.output,
+            args.shard_id,
+            args.num_shards,
             rag_threshold=args.rag_threshold,
         )
 

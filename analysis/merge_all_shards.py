@@ -15,11 +15,12 @@ into a ``{key}_merged/`` directory alongside the originals.
 
 Usage::
 
-    python analysis/merge_all_shards.py output/im2gps3k_rgb_images [--dry-run]
+    python analysis/merge_all_shards.py output/im2gps3k [--dry-run]
 """
 
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import argparse
@@ -28,11 +29,15 @@ from collections import defaultdict
 
 
 def main():
-    p = argparse.ArgumentParser(description=__doc__,
-                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    p = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     p.add_argument("directory", type=Path, help="Directory containing shard subdirs")
-    p.add_argument("--dry-run", action="store_true",
-                   help="Print what would be done without writing files")
+    p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print what would be done without writing files",
+    )
     args = p.parse_args()
 
     root = args.directory.resolve()

@@ -1,39 +1,47 @@
-Using canonical 7-model registry:
-  [LLaVA-1.6]  output/im2gps3k_rgb_images/llava_merged/results_s6_llava.jsonl  ✓
-  [DeepSeek-7B]  output/im2gps3k_rgb_images/cmp_shard_deepseek_merged/results_s6_deepseek.jsonl  ✓
-  [LLaMA-3.2-11B]  output/im2gps3k_rgb_images/cmp_shard_llama32vision_merged/results_s6_llama32vision.jsonl  ✓
-  [MiniCPM-V-2.6]  output/im2gps3k_rgb_images/cmp_shard_cpm_merged/results_s6_cpm.jsonl  ✓
-  [LLaMA-3.2-11B (swap)]  output/im2gps3k_rgb_images/guess_merged/results_s6_llama32.jsonl  ✓
-  [Falcon-11B]  output/im2gps3k_rgb_images/cmp_shard_falcon_merged/results_s6_falcon.jsonl  ✓
-  [Qwen2-VL-7B]  output/im2gps3k_rgb_images/cmp_shard_qwen_merged/results_s6_qwen.jsonl  ✗ MISSING
-Common images across all models: 2997
-NAVIG — Stage-6 Comparison Report (6 models)
-Models: LLaMA-3.2-11B, LLaVA-1.6, MiniCPM-V-2.6, DeepSeek-7B, LLaMA-3.2-11B (swap), Falcon-11B
-Common samples: 2997
+Auto-discovered 9 result file(s):
+  [cpm]  output/test/cmp_shard_cpm_merged/results_s6_cpm.jsonl
+  [cpm_sft]  output/test/cmp_shard_cpm_sft_merged/results_s6_cpm_sft.jsonl
+  [deepseek]  output/test/cmp_shard_deepseek_merged/results_s6_deepseek.jsonl
+  [falcon]  output/test/cmp_shard_falcon_merged/results_s6_falcon.jsonl
+  [llama32vision]  output/test/cmp_shard_llama32vision_merged/results_s6_llama32vision.jsonl
+  [llava]  output/test/cmp_shard_llava_merged/results_s6_llava.jsonl
+  [llava_sft]  output/test/cmp_shard_llava_sft_merged/results_s6_llava_sft.jsonl
+  [qwen]  output/test/cmp_shard_qwen_merged/results_s6_qwen.jsonl
+  [qwen_sft]  output/test/cmp_shard_qwen_sft_merged/results_s6_qwen_sft.jsonl
+Common images across all models: 1
+NAVIG — Stage-6 Comparison Report (9 models)
+Models: llama32vision, llava, deepseek, llava_sft, cpm, cpm_sft, falcon, qwen, qwen_sft
+Common samples: 1
 
 ================================================================================
   1. OVERALL COMPARISON
 ================================================================================
-Model                      N   GeoScore      ΔGS    AvgDist    MedDist     @1km    @25km   @200km   @750km  @2500km   Fail%
----------------------------------------------------------------------------------------------------------------------------
-LLaMA-3.2-11B           2997    2933.19     base     2915.5      409.6   0.0694   0.3043   0.4268   0.5746   0.6980   11.2%
-LLaVA-1.6               2997    2626.79   -306.4     2818.0      821.1   0.0237   0.1728   0.2736   0.4848   0.7074    0.7%
-MiniCPM-V-2.6           2997    2581.53   -351.7     3407.4      813.2   0.0274   0.2069   0.3303   0.4908   0.6456   13.0%
-DeepSeek-7B             2997    2448.60   -484.6     3376.0     1015.0   0.0290   0.1765   0.2870   0.4571   0.6350    7.3%
-LLaMA-3.2-11B (swap)    2997    2062.17   -871.0     4578.3     1780.9   0.0440   0.1812   0.2523   0.3817   0.5352   26.5%
-Falcon-11B              2997       6.16  -2927.0    10000.0    10000.0   0.0000   0.0000   0.0000   0.0000   0.0000  100.0%
+Model               N   GeoScore      ΔGS    AvgDist    MedDist     @1km    @25km   @200km   @750km  @2500km   Fail%
+--------------------------------------------------------------------------------------------------------------------
+llama32vision       1    4738.18     base       80.3       80.3   0.0000   0.0000   1.0000   1.0000   1.0000    0.0%
+llava               1    4487.16   -251.0      161.5      161.5   0.0000   0.0000   1.0000   1.0000   1.0000    0.0%
+deepseek            1    4168.55   -569.6      271.5      271.5   0.0000   0.0000   0.0000   1.0000   1.0000    0.0%
+llava_sft           1    3491.83  -1246.3      535.9      535.9   0.0000   0.0000   0.0000   1.0000   1.0000    0.0%
+cpm                 1    2125.77  -2612.4     1276.7     1276.7   0.0000   0.0000   0.0000   0.0000   1.0000    0.0%
+cpm_sft             1    2125.77  -2612.4     1276.7     1276.7   0.0000   0.0000   0.0000   0.0000   1.0000    0.0%
+falcon              1       6.16  -4732.0    10000.0    10000.0   0.0000   0.0000   0.0000   0.0000   0.0000  100.0%
+qwen                1       6.16  -4732.0    10000.0    10000.0   0.0000   0.0000   0.0000   0.0000   0.0000  100.0%
+qwen_sft            1       6.16  -4732.0    10000.0    10000.0   0.0000   0.0000   0.0000   0.0000   0.0000  100.0%
 
 ================================================================================
   2. DISTANCE DISTRIBUTION (km)
 ================================================================================
-Model                       P25       P50       P75       P90       P95
------------------------------------------------------------------------
-LLaMA-3.2-11B               7.7     409.6    5564.5   10000.0   10061.0
-LLaVA-1.6                 156.8     821.1    3450.5    9571.5   11819.5
-MiniCPM-V-2.6              50.6     813.2    7531.2   10000.0   10790.6
-DeepSeek-7B               115.2    1015.0    6653.0   10000.0   10985.8
-LLaMA-3.2-11B (swap)      193.7    1780.9   10000.0   10000.0   10494.0
-Falcon-11B              10000.0   10000.0   10000.0   10000.0   10000.0
+Model                P25       P50       P75       P90       P95
+----------------------------------------------------------------
+llama32vision       80.3      80.3      80.3      80.3      80.3
+llava              161.5     161.5     161.5     161.5     161.5
+deepseek           271.5     271.5     271.5     271.5     271.5
+llava_sft          535.9     535.9     535.9     535.9     535.9
+cpm               1276.7    1276.7    1276.7    1276.7    1276.7
+cpm_sft           1276.7    1276.7    1276.7    1276.7    1276.7
+falcon           10000.0   10000.0   10000.0   10000.0   10000.0
+qwen             10000.0   10000.0   10000.0   10000.0   10000.0
+qwen_sft         10000.0   10000.0   10000.0   10000.0   10000.0
 
 ================================================================================
   3. EVIDENCE USAGE — DOES EACH TYPE HELP?
@@ -41,74 +49,81 @@ Falcon-11B              10000.0   10000.0   10000.0   10000.0   10000.0
   GeoScore when evidence type is present (1) vs. absent (0)
 
   REASONING
-  Model                    N(1)     GS(1)    N(0)     GS(0)     Delta
-  -------------------------------------------------------------------
-  LLaMA-3.2-11B            2997   2933.19       0       nan      +nan
-  LLaVA-1.6                2997   2626.79       0       nan      +nan
-  MiniCPM-V-2.6            2997   2581.53       0       nan      +nan
-  DeepSeek-7B              2997   2448.60       0       nan      +nan
-  LLaMA-3.2-11B (swap)     2997   2062.17       0       nan      +nan
-  Falcon-11B               2997      6.16       0       nan      +nan
+  Model             N(1)     GS(1)    N(0)     GS(0)     Delta
+  ------------------------------------------------------------
+  llama32vision        1   4738.18       0       nan      +nan
+  llava                1   4487.16       0       nan      +nan
+  deepseek             1   4168.55       0       nan      +nan
+  llava_sft            1   3491.83       0       nan      +nan
+  cpm                  1   2125.77       0       nan      +nan
+  cpm_sft              1   2125.77       0       nan      +nan
+  falcon               1      6.16       0       nan      +nan
+  qwen                 1      6.16       0       nan      +nan
+  qwen_sft             1      6.16       0       nan      +nan
 
   OSM
-  Model                    N(1)     GS(1)    N(0)     GS(0)     Delta
-  -------------------------------------------------------------------
-  LLaMA-3.2-11B              33   3890.57    2964   2922.53   +968.04
-  LLaVA-1.6                   6      6.16    2991   2632.05  -2625.89
-  MiniCPM-V-2.6               4   3339.01    2993   2580.51   +758.50
-  DeepSeek-7B                 8   1463.22    2989   2451.24   -988.02
-  LLaMA-3.2-11B (swap)        0       nan    2997   2062.17      +nan
-  Falcon-11B                  0       nan    2997      6.16      +nan
+  Model             N(1)     GS(1)    N(0)     GS(0)     Delta
+  ------------------------------------------------------------
+  llama32vision        0       nan       1   4738.18      +nan
+  llava                0       nan       1   4487.16      +nan
+  deepseek             0       nan       1   4168.55      +nan
+  llava_sft            0       nan       1   3491.83      +nan
+  cpm                  0       nan       1   2125.77      +nan
+  cpm_sft              0       nan       1   2125.77      +nan
+  falcon               0       nan       1      6.16      +nan
+  qwen                 0       nan       1      6.16      +nan
+  qwen_sft             0       nan       1      6.16      +nan
 
   RAG
-  Model                    N(1)     GS(1)    N(0)     GS(0)     Delta
-  -------------------------------------------------------------------
-  LLaMA-3.2-11B              37   2451.61    2960   2939.21   -487.60
-  LLaVA-1.6                  37   1879.46    2960   2636.13   -756.67
-  MiniCPM-V-2.6              37   2260.09    2960   2585.54   -325.46
-  DeepSeek-7B                37   1875.84    2960   2455.76   -579.92
-  LLaMA-3.2-11B (swap)       37   1642.71    2960   2067.42   -424.71
-  Falcon-11B                 37      6.16    2960      6.16     -0.00
+  Model             N(1)     GS(1)    N(0)     GS(0)     Delta
+  ------------------------------------------------------------
+  llama32vision        0       nan       1   4738.18      +nan
+  llava                0       nan       1   4487.16      +nan
+  deepseek             0       nan       1   4168.55      +nan
+  llava_sft            0       nan       1   3491.83      +nan
+  cpm                  0       nan       1   2125.77      +nan
+  cpm_sft              0       nan       1   2125.77      +nan
+  falcon               0       nan       1      6.16      +nan
+  qwen                 0       nan       1      6.16      +nan
+  qwen_sft             0       nan       1      6.16      +nan
 
   COMMENT
-  Model                    N(1)     GS(1)    N(0)     GS(0)     Delta
-  -------------------------------------------------------------------
-  LLaMA-3.2-11B            2687   2930.85     310   2953.49    -22.65
-  LLaVA-1.6                2687   2633.62     310   2567.60    +66.02
-  MiniCPM-V-2.6            2687   2546.82     310   2882.37   -335.55
-  DeepSeek-7B              2687   2458.30     310   2364.57    +93.73
-  LLaMA-3.2-11B (swap)     2687   2079.35     310   1913.33   +166.01
-  Falcon-11B               2687      6.16     310      6.16     +0.00
+  Model             N(1)     GS(1)    N(0)     GS(0)     Delta
+  ------------------------------------------------------------
+  llama32vision        0       nan       1   4738.18      +nan
+  llava                0       nan       1   4487.16      +nan
+  deepseek             0       nan       1   4168.55      +nan
+  llava_sft            0       nan       1   3491.83      +nan
+  cpm                  0       nan       1   2125.77      +nan
+  cpm_sft              0       nan       1   2125.77      +nan
+  falcon               0       nan       1      6.16      +nan
+  qwen                 0       nan       1      6.16      +nan
+  qwen_sft             0       nan       1      6.16      +nan
 
 
 ================================================================================
   4. GEOGRAPHIC BREAKDOWN (GeoScore by continent)
 ================================================================================
-  Continent          N   LLaMA-3.2-    LLaVA-1.6   MiniCPM-V-   DeepSeek-7   LLaMA-3.2-   Falcon-11B
-  ----------------------------------------------------------------------------------------------------
-  Europe          1066       3222.9       3205.7       3024.6       2670.9       2504.0          6.2
-  N. America       936       2885.5       2342.2       2687.2       2512.7       1855.8          6.2
-  Asia (N)         630       3011.5       2635.3       2368.2       2561.3       2101.4          6.2
-  Africa           187       2236.3       1686.5       1569.9       1448.0       1285.2          6.2
-  S. America       122       1627.5       1440.1       1008.3       1170.8       1090.1          6.2
-  Oceania           42       2678.1       2329.3       1641.2       2166.5       1687.9          6.2
-  Asia (S/SE)        9       1957.5        725.2       1296.0       1648.4        511.3          6.2
-  Other              4       2204.1       1373.6       1848.5       1149.4        349.9          6.2
-  Arctic             1       1451.1       1845.3        844.5       1768.7          6.2          6.2
+  Continent         N   llama32vis        llava     deepseek    llava_sft          cpm      cpm_sft       falcon         qwen     qwen_sft
+  ------------------------------------------------------------------------------------------------------------------------------------------
+  N. America        1       4738.2       4487.2       4168.6       3491.8       2125.8       2125.8          6.2          6.2          6.2
 
 ================================================================================
   5. PARSE FAILURE ANALYSIS
 ================================================================================
-  (Parse failures penalised as 10000 km in all other sections)
+  (Parse failures penalised as 10 000 km in all other sections)
 
-  Model                      N   Failures    Fail%   GS excl. failures
-  --------------------------------------------------------------------
-  LLaMA-3.2-11B           2997        335    11.2%             3301.54
-  LLaVA-1.6               2997         20     0.7%             2644.40
-  MiniCPM-V-2.6           2997        391    13.0%             2967.93
-  DeepSeek-7B             2997        220     7.3%             2642.10
-  LLaMA-3.2-11B (swap)    2997        793    26.5%             2801.93
-  Falcon-11B              2997       2997   100.0%                 nan
+  Model               N   Failures    Fail%   GS excl. failures
+  -------------------------------------------------------------
+  llama32vision       1          0     0.0%             4738.18
+  llava               1          0     0.0%             4487.16
+  deepseek            1          0     0.0%             4168.55
+  llava_sft           1          0     0.0%             3491.83
+  cpm                 1          0     0.0%             2125.77
+  cpm_sft             1          0     0.0%             2125.77
+  falcon              1          1   100.0%                 nan
+  qwen                1          1   100.0%                 nan
+  qwen_sft            1          1   100.0%                 nan
 
 ================================================================================
   6. MODEL AGREEMENT
@@ -117,61 +132,54 @@ Falcon-11B              10000.0   10000.0   10000.0   10000.0   10000.0
 
   Pair                        within 50km  within 200km  within 500km
   -------------------------------------------------------------------
-  LLaMA-3.2- vs LLaVA-1.6          0.217         0.300         0.428 
-  LLaMA-3.2- vs MiniCPM-V-         0.331         0.427         0.530 
-  LLaMA-3.2- vs DeepSeek-7         0.268         0.351         0.464 
-  LLaMA-3.2- vs LLaMA-3.2-         0.306         0.369         0.469 
-  LLaMA-3.2- vs Falcon-11B         0.000         0.000         0.000 
-  LLaVA-1.6 vs MiniCPM-V-          0.218         0.297         0.424 
-  LLaVA-1.6 vs DeepSeek-7          0.208         0.289         0.386 
-  LLaVA-1.6 vs LLaMA-3.2-          0.498         0.679         0.823 
-  LLaVA-1.6 vs Falcon-11B          0.000         0.000         0.000 
-  MiniCPM-V- vs DeepSeek-7         0.273         0.369         0.475 
-  MiniCPM-V- vs LLaMA-3.2-         0.267         0.334         0.447 
-  MiniCPM-V- vs Falcon-11B         0.000         0.000         0.000 
-  DeepSeek-7 vs LLaMA-3.2-         0.231         0.311         0.412 
-  DeepSeek-7 vs Falcon-11B         0.000         0.000         0.000 
-  LLaMA-3.2- vs Falcon-11B         0.000         0.000         0.000 
+  llama32vis vs llava              0.000         1.000         1.000 
+  llama32vis vs deepseek           0.000         0.000         1.000 
+  llama32vis vs llava_sft          0.000         0.000         1.000 
+  llama32vis vs cpm                0.000         0.000         0.000 
+  llama32vis vs cpm_sft            0.000         0.000         0.000 
+  llama32vis vs falcon             0.000         0.000         0.000 
+  llama32vis vs qwen               0.000         0.000         0.000 
+  llama32vis vs qwen_sft           0.000         0.000         0.000 
+  llava vs deepseek                0.000         0.000         1.000 
+  llava vs llava_sft               0.000         0.000         0.000 
+  llava vs cpm                     0.000         0.000         0.000 
+  llava vs cpm_sft                 0.000         0.000         0.000 
+  llava vs falcon                  0.000         0.000         0.000 
+  llava vs qwen                    0.000         0.000         0.000 
+  llava vs qwen_sft                0.000         0.000         0.000 
+  deepseek vs llava_sft            0.000         0.000         1.000 
+  deepseek vs cpm                  0.000         0.000         0.000 
+  deepseek vs cpm_sft              0.000         0.000         0.000 
+  deepseek vs falcon               0.000         0.000         0.000 
+  deepseek vs qwen                 0.000         0.000         0.000 
+  deepseek vs qwen_sft             0.000         0.000         0.000 
+  llava_sft vs cpm                 0.000         0.000         0.000 
+  llava_sft vs cpm_sft             0.000         0.000         0.000 
+  llava_sft vs falcon              0.000         0.000         0.000 
+  llava_sft vs qwen                0.000         0.000         0.000 
+  llava_sft vs qwen_sft            0.000         0.000         0.000 
+  cpm vs cpm_sft                   1.000         1.000         1.000 
+  cpm vs falcon                    0.000         0.000         0.000 
+  cpm vs qwen                      0.000         0.000         0.000 
+  cpm vs qwen_sft                  0.000         0.000         0.000 
+  cpm_sft vs falcon                0.000         0.000         0.000 
+  cpm_sft vs qwen                  0.000         0.000         0.000 
+  cpm_sft vs qwen_sft              0.000         0.000         0.000 
+  falcon vs qwen                   0.000         0.000         0.000 
+  falcon vs qwen_sft               0.000         0.000         0.000 
+  qwen vs qwen_sft                 0.000         0.000         0.000 
 
 ================================================================================
   7. HARDEST AND EASIEST IMAGES (avg distance across all models, top 15)
 ================================================================================
 
   EASIEST (all models predict well)
-  Image ID                                   AvgDist  LLaMA-3.2  LLaVA-1.6  MiniCPM-V  DeepSeek-  LLaMA-3.2  Falcon-11
-  --------------------------------------------------------------------------------------------------------------------
-  297480819_247ee47039_99_32377115@N00        1666.8        0.2        0.1        0.0        0.0        0.3    10000.0
-  1413521035_a30171c418_1402_73293249@N00     1667.0        0.1        0.3        1.3        0.1        0.1    10000.0
-  348310302_d0203f7731_55_97332629@N00        1667.0        0.4        0.5        0.4        0.4        0.4    10000.0
-  171046893_b97c4f0aa5_73_30571787@N00        1667.1        0.5        0.4        0.5        0.5        0.5    10000.0
-  872895920_865d506517_1057_9729483@N02       1667.1        0.3        0.8        0.8        0.8        0.3    10000.0
-  150891657_8ea3eb60ca_46_70323761@N00        1667.2        0.2        0.4        1.4        0.6        0.5    10000.0
-  129509096_0a9e9e9b0f_1_42485416@N00         1667.2        0.7        0.5        0.7        0.7        0.7    10000.0
-  289256558_d2a0d32413_117_40829484@N00       1667.2        0.7        0.7        0.7        0.7        0.7    10000.0
-  141288167_7321e778af_54_85417391@N00        1667.2        0.7        0.7        0.6        0.7        0.7    10000.0
-  228850873_0545142eed_73_55085284@N00        1667.3        0.7        0.7        0.7        0.7        0.7    10000.0
-  192049090_ae473cbf3e_61_39595541@N00        1667.3        0.7        0.6        0.7        0.7        0.7    10000.0
-  228909896_02464233a2_65_55085284@N00        1667.3        0.7        0.7        0.7        0.7        0.7    10000.0
-  348315378_8f9a48cbc9_135_97332629@N00       1667.3        0.4        0.4        0.4        0.4        2.1    10000.0
-  104132709_97b998c989_41_19355699@N00        1667.3        0.5        1.0        0.8        1.1        0.5    10000.0
-  315876761_b49e569d85_105_14491548@N00       1667.4        0.9        0.7        0.9        0.9        0.9    10000.0
+  Image ID                               AvgDist  llama32vi      llava   deepseek  llava_sft        cpm    cpm_sft     falcon       qwen   qwen_sft
+  -------------------------------------------------------------------------------------------------------------------------------------------------
+  31700873_d7c4159106_22_25159586@N00     3733.6       80.3      161.5      271.5      535.9     1276.7     1276.7    10000.0    10000.0    10000.0
 
-  HARDEST (all models struggle)
-  Image ID                                   AvgDist  LLaMA-3.2  LLaVA-1.6  MiniCPM-V  DeepSeek-  LLaMA-3.2  Falcon-11
-  --------------------------------------------------------------------------------------------------------------------
-  89895256_3a74abd0ef_14_28026984@N00        16193.9    17095.1    16835.5    17679.9    18717.6    16835.4    10000.0
-  446921436_aaf90b2ffa_182_55126705@N00      15217.1    16419.5    18681.4    10000.0    17519.7    18682.0    10000.0
-  447022280_7851b66b61_187_55126705@N00      14910.4     2704.6    19080.8    19358.7    18935.9    19382.7    10000.0
-  258336246_35b404e80a_96_26519935@N00       14654.5    11442.5    18258.3    18355.3    11056.7    18814.5    10000.0
-  257078399_0bb17c80d4_114_26519935@N00      14456.2    14439.5    18464.1    12749.5    11565.8    19518.2    10000.0
-  109040743_ad2fafd7e9_51_18684820@N00       14379.5    17002.8    19564.1      583.5    19562.9    19563.6    10000.0
-  122874346_d2c3b79d6a_1_69212252@N00        14306.0    11951.0    15950.8    15991.7    15991.7    15951.0    10000.0
-  165496002_64580a67ac_49_23601949@N00       14215.2    16182.2    10000.0    16014.9    15649.0    17444.8    10000.0
-  336185727_047a25844c_144_56249023@N00      14037.9    12972.0    16567.4    17529.9    10347.1    16810.9    10000.0
-  1259522892_ceb36d34ca_1025_48264126@N00    13973.1    16851.0    16999.7    10000.0    12979.8    17007.9    10000.0
-  165539256_7befe68333_58_23601949@N00       13696.5    10000.0    15285.0    16540.4    15073.3    15280.5    10000.0
-  1268682921_a4f066d15f_1117_11786349@N08    13671.5     8819.7    18213.1    13374.9    13386.7    18234.3    10000.0
-  522457904_8be307d8dd_250_61819159@N00      13585.0    15189.4    15790.6    16993.4     7753.0    15783.6    10000.0
-  1388076875_5eb2f52dba_1218_74196805@N00    13564.9    10000.0    17106.4    17175.8    10000.0    17107.0    10000.0
-  322343421_84d421d813_126_82981539@N00      13212.9    11690.2    18184.7    11146.2    18256.6    10000.0    10000.0
+  HARDEST (all models predict poorly)
+  Image ID                               AvgDist  llama32vi      llava   deepseek  llava_sft        cpm    cpm_sft     falcon       qwen   qwen_sft
+  -------------------------------------------------------------------------------------------------------------------------------------------------
+  31700873_d7c4159106_22_25159586@N00     3733.6       80.3      161.5      271.5      535.9     1276.7     1276.7    10000.0    10000.0    10000.0
 
