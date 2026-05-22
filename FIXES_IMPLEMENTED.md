@@ -50,39 +50,49 @@ out = self.model.generate(
 
 ---
 
-### Fix 2: LLaVA Token Overflow at Stage 6 (llm.py:264)
+### Fix 2: LLaVA Token Overflow at Stage 6 (llm.py:259–315)
 
 **Problem:** LLaVA vLLM runs were failing at stage 6 because input tokens exceeded the model's context window limit.
 
-**Evidence:**
+**Initial Failure:** First attempt increased `max_model_len` to 5120, but vLLM rejected this:
 ```
-Token indices sequence length is longer than the specified maximum sequence length 
-for this model (4228 > 4096)
+ValueError: User-specified max_model_len (5120) is greater than the derived 
+max_model_len (max_position_embeddings=4096). This may lead to incorrect model outputs.
 ```
 
-**Root Cause:** Stage 6 queries are comprehensive summaries that include:
+**Root Cause:** LLaVA's positional embeddings have a **hard architectural limit** of 4096 tokens. This cannot be overridden. Stage 6 queries reach ~4200 tokens due to:
 - Reasoning output from stage 1 (~500 tokens)
 - RAG-retrieved guidebook knowledge (~300 tokens)
 - Commenting details from stage 4 (~200 tokens)
 - OSM search results (~150 tokens)
-- Total: ~4200 tokens in a single prompt
 
-The vLLM LLaVA model was initialized with `max_model_len=4096`, causing overflow.
+**Correct Solution:** Smart prompt truncation instead of model reconfiguration.
 
-**Solution:**
-- Increased `max_model_len` from 4096 to 5120 tokens (25% headroom)
-- This accommodates stage 6 queries up to ~4400 tokens
+**Implementation (llm.py:268–290):**
+- Added `_truncate_prompt()` method to LLaVA_vllm class
+- Estimates tokens at ~1.3 chars per token
+- Intelligently truncates in priority order:
+  1. RAG knowledge sections (least critical for final guess)
+  2. Commenting details
+  3. OSM results
+  4. Preserves reasoning and system instructions (most critical)
+- Conservative target: 3840 tokens input (4096 - 256 buffer for output)
 
 **Code Changes:**
 ```python
-# Before
-self.llm = LLM(model=model_path, dtype="float16", max_model_len=4096)
-
-# After
+# Before: attempted to exceed architectural limit
 self.llm = LLM(model=model_path, dtype="float16", max_model_len=5120)
+
+# After: respect the limit and truncate inputs smartly
+self.llm = LLM(model=model_path, dtype="float16", max_model_len=4096)
+self.max_input_tokens = 3840
+
+def _truncate_prompt(self, prompt: str) -> str:
+    # Estimate tokens, truncate RAG/comments sections while preserving reasoning
+    ...
 ```
 
-**Note:** Future scaling: if queries grow beyond 5120, consider implementing prompt truncation in `build_guess_query()` or upgrading to a model with larger context window (e.g., LLaVA-NeXT with 8K support).
+**Also Fixed:** Removed corrupted Nominatim cache database (`.cache/nominatim/cache.db`) which was causing `sqlite3.DatabaseError: database disk image is malformed` during OSM lookups.
 
 ---
 
