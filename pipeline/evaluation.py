@@ -87,7 +87,7 @@ class Evaluator:
         use_vllm: bool = False,
         shard_id: int = 0,
         num_shards: int = 1,
-        rag_threshold: float = 30.0,
+        rag_threshold: float = 100.0,
     ):
         self.dataset_path = dataset_path
         self.model_type = model_type
@@ -189,7 +189,7 @@ class Evaluator:
             for category, images in row["crop"].items():
                 if images:
                     sim_images, sim_texts, distances = retrieve_similar_images(
-                        images[0], threshold=40
+                        images[0], threshold=self.rag_threshold
                     )
                     retrieved[category] = [
                         {"similar_image": img, "relevant_clue": txt, "distance": d}

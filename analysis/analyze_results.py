@@ -112,26 +112,7 @@ def get_dist(row: dict) -> tuple[float, bool]:
         return 10_000.0, True
 
 
-def lat_to_continent(lat: float, lon: float) -> str:
-    if lat > 66.5:
-        return "Arctic"
-    if lat < -60:
-        return "Antarctica"
-    if -35 < lat < 37 and -20 < lon < 55:
-        return "Africa"
-    if lat > 35 and -30 < lon < 60:
-        return "Europe"
-    if lat > 0 and 60 < lon < 180:
-        return "Asia (N)"
-    if -10 < lat < 35 and 60 < lon < 180:
-        return "Asia (S/SE)"
-    if -55 < lat < -10 and 110 < lon < 180:
-        return "Oceania"
-    if 15 < lat < 75 and -170 < lon < -50:
-        return "N. America"
-    if -60 < lat < 15 and -90 < lon < -30:
-        return "S. America"
-    return "Other"
+from geo_utils import lat_to_continent  # noqa: E402
 
 
 # ── Data loading ───────────────────────────────────────────────────────────────
@@ -256,13 +237,13 @@ def sec3_evidence(out, models: list[dict]) -> None:
         out.write("\n")
 
 
-def sec4_geographic(out, models: list[dict], common_ids: list[str]) -> None:
+def sec4_geographic(out, models: list[dict], common_ids: list[str], use_api: bool = True) -> None:
     section(out, "4. GEOGRAPHIC BREAKDOWN (GeoScore by continent)")
     first_rows = models[0]["rows"]
     continents: dict[str, list[str]] = defaultdict(list)
     for img_id in common_ids:
         row = first_rows[img_id]
-        cont = lat_to_continent(float(row["LAT"]), float(row["LON"]))
+        cont = lat_to_continent(float(row["LAT"]), float(row["LON"]), use_api=use_api)
         continents[cont].append(img_id)
 
     col_label = max(len(m["label"]) for m in models) + 2
@@ -384,6 +365,100 @@ def sec7_hard_easy(out, models: list[dict], common_ids: list[str], k: int = 15) 
             out.write("  ".join(parts) + "\n")
 
 
+def sec8_pairwise(out, models: list[dict], common_ids: list[str], top_k: int = 10) -> None:
+    section(out, "8. PAIRWISE HEAD-TO-HEAD")
+
+    if len(models) < 2:
+        out.write("  Need at least 2 models for pairwise comparison.\n")
+        return
+
+    col_id = min(max(len(i) for i in common_ids), 40) if common_ids else 20
+
+    # Win/loss/tie summary for all pairs
+    col_pair = 33
+    hdr = (
+        f"  {'Pair (A  →  B)':<{col_pair}} {'N':>5}  "
+        f"{'A wins%':>8}  {'B wins%':>8}  {'Tied%':>8}  "
+        f"{'GS_A':>8}  {'GS_B':>8}  {'ΔGS':>7}\n"
+    )
+    out.write(hdr)
+    out.write("  " + "-" * (len(hdr) - 3) + "\n")
+
+    pairs = [
+        (i, j)
+        for i in range(len(models))
+        for j in range(i + 1, len(models))
+    ]
+    for i, j in pairs:
+        ma, mb = models[i], models[j]
+        deltas = []
+        for img_id in common_ids:
+            if img_id not in ma["rows"] or img_id not in mb["rows"]:
+                continue
+            da, _ = get_dist(ma["rows"][img_id])
+            db, _ = get_dist(mb["rows"][img_id])
+            deltas.append(db - da)  # positive → A closer than B
+
+        n = len(deltas)
+        if n == 0:
+            continue
+
+        a_wins = sum(1 for d in deltas if d > 0.5)
+        b_wins = sum(1 for d in deltas if d < -0.5)
+        tied = n - a_wins - b_wins
+        gs_a = ma["stats"]["geoscore"]
+        gs_b = mb["stats"]["geoscore"]
+        pair_label = f"{ma['label'][:14]} → {mb['label'][:14]}"
+        out.write(
+            f"  {pair_label:<{col_pair}} {n:>5}  "
+            f"{100*a_wins/n:>7.1f}%  {100*b_wins/n:>7.1f}%  {100*tied/n:>7.1f}%  "
+            f"{gs_a:>8.2f}  {gs_b:>8.2f}  {gs_b - gs_a:>+7.2f}\n"
+        )
+
+    # Per-model quartiles and top-K vs. the top-ranked baseline
+    baseline = models[0]
+    for m in models[1:]:
+        out.write(f"\n  ── {m['label']} vs. {baseline['label']} (baseline) ──\n")
+
+        deltas: list[float] = []
+        per_image: list[tuple[str, float, float, float]] = []
+
+        for img_id in common_ids:
+            if img_id not in baseline["rows"] or img_id not in m["rows"]:
+                continue
+            da, _ = get_dist(baseline["rows"][img_id])
+            db, _ = get_dist(m["rows"][img_id])
+            delta = db - da  # negative → m improved over baseline
+            deltas.append(delta)
+            per_image.append((img_id, da, db, delta))
+
+        if not deltas:
+            out.write("  No common images.\n")
+            continue
+
+        out.write(
+            f"\n  Distance delta quartiles (km, negative = {m['label']} improved):\n"
+        )
+        for q, lbl in [(0, "min"), (25, "Q1"), (50, "median"), (75, "Q3"), (100, "max")]:
+            out.write(f"    {lbl:6s}: {np.percentile(deltas, q):+.1f} km\n")
+
+        per_image.sort(key=lambda x: x[3])
+
+        out.write(f"\n  Top {top_k} most improved by {m['label']}:\n")
+        out.write(
+            f"  {'ID':<{col_id}} {'Baseline(km)':>13} {'Experiment(km)':>15} {'Delta':>10}\n"
+        )
+        for img_id, da, db, delta in per_image[:top_k]:
+            out.write(f"  {img_id:<{col_id}} {da:>13.1f} {db:>15.1f} {delta:>+10.1f}\n")
+
+        out.write(f"\n  Top {top_k} most hurt by {m['label']}:\n")
+        out.write(
+            f"  {'ID':<{col_id}} {'Baseline(km)':>13} {'Experiment(km)':>15} {'Delta':>10}\n"
+        )
+        for img_id, da, db, delta in per_image[-top_k:][::-1]:
+            out.write(f"  {img_id:<{col_id}} {da:>13.1f} {db:>15.1f} {delta:>+10.1f}\n")
+
+
 # ── Auto-discovery ─────────────────────────────────────────────────────────────
 
 
@@ -442,6 +517,17 @@ def main():
         default=None,
         help="Save report to this file (also always prints to stdout)",
     )
+    p.add_argument(
+        "--top-k",
+        type=int,
+        default=10,
+        help="Images to show in most-improved / most-hurt tables (default: 10)",
+    )
+    p.add_argument(
+        "--no_api",
+        action="store_true",
+        help="Skip Nominatim reverse geocoding for continent assignment (use bounding-box fallback).",
+    )
     args = p.parse_args()
 
     if args.canonical:
@@ -496,10 +582,11 @@ def main():
     sec1_overall(buf, models)
     sec2_distribution(buf, models)
     sec3_evidence(buf, models)
-    sec4_geographic(buf, models, common_ids)
+    sec4_geographic(buf, models, common_ids, use_api=not args.no_api)
     sec5_failures(buf, models)
     sec6_agreement(buf, models, common_ids)
     sec7_hard_easy(buf, models, common_ids)
+    sec8_pairwise(buf, models, common_ids, top_k=args.top_k)
 
     report = buf.getvalue()
     print(report)

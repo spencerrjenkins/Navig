@@ -127,26 +127,7 @@ WORST = [
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 
-def continent(lat, lon):
-    """Heuristic continent assignment from latitude and longitude."""
-    if lat is None or lon is None:
-        return "Other"
-    lon = ((lon + 180) % 360) - 180
-    if lat <= -60:
-        return "Antarctica"
-    if -55 <= lat <= 15 and -82 <= lon <= -34:
-        return "S. America"
-    if 15 <= lat <= 72 and -168 <= lon <= -50:
-        return "N. America"
-    if 35 <= lat <= 72 and -25 <= lon <= 40:
-        return "Europe"
-    if -37 <= lat <= 38 and -20 <= lon <= 55:
-        return "Africa"
-    if 20 <= lat <= 77 and 40 <= lon <= 180:
-        return "Asia (N)"
-    if -50 <= lat <= 10 and 110 <= lon <= 180:
-        return "Oceania"
-    return "Other"
+from geo_utils import lat_to_continent as continent  # noqa: E402
 
 
 def load_image(img_dir: Path, id_):

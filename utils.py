@@ -44,11 +44,71 @@ _GROUNDING_DINO_WEIGHTS = (
     _ROOT / "GroundingDINO" / "weights" / "groundingdino_swint_ogc.pth"
 )
 _NOMINATIM_CACHE_DIR = _ROOT / ".cache" / "nominatim"
-# Nominatim policy: regularly-scheduled batch scripts are limited to 4 req/min.
-# We enforce 15 s between requests across ALL parallel shards via a shared lock.
-_NOMINATIM_MIN_INTERVAL = 15.0
+# Nominatim policy: max 1 request/second for research/batch use.
+# We enforce 1 s between requests across ALL parallel shards via a shared lock.
+# (Previous value was 15 s / 4 per minute — needlessly conservative for a pipeline
+# that runs infrequently; 1 s keeps us well within the published limit.)
+_NOMINATIM_MIN_INTERVAL = 1.0
 _NOMINATIM_LOCK_PATH = _NOMINATIM_CACHE_DIR / ".rate_limit.lock"
 _NOMINATIM_TS_PATH = _NOMINATIM_CACHE_DIR / ".rate_limit.ts"
+_NOMINATIM_CACHE_FILE = _NOMINATIM_CACHE_DIR / "cache.json"
+
+# ── In-memory Nominatim cache ─────────────────────────────────────────────────
+# Loaded once from a single JSON file on first access.  Individual .json shards
+# written by earlier runs are merged in on startup and then ignored.
+# All in-process writes go to both the in-memory dict and the single file.
+_nom_cache: dict[str, list[dict]] | None = None  # keyed by sha256(candidate:top_k)
+
+
+def _ensure_nom_cache() -> dict[str, list[dict]]:
+    """Load the Nominatim cache into memory exactly once per process."""
+    global _nom_cache
+    if _nom_cache is not None:
+        return _nom_cache
+
+    _nom_cache = {}
+    _NOMINATIM_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Load the consolidated cache file if it exists.
+    if _NOMINATIM_CACHE_FILE.exists():
+        try:
+            _nom_cache = json.loads(_NOMINATIM_CACHE_FILE.read_text())
+            logger.info("Nominatim cache loaded: %d entries", len(_nom_cache))
+        except Exception as e:
+            logger.warning("Nominatim cache read error: %s", e)
+            _nom_cache = {}
+
+    # Absorb any per-entry .json files written by earlier code versions.
+    absorbed = 0
+    for f in _NOMINATIM_CACHE_DIR.glob("*.json"):
+        if f.name == "cache.json":
+            continue
+        stem = f.stem  # sha256 hex digest
+        if stem not in _nom_cache:
+            try:
+                _nom_cache[stem] = json.loads(f.read_text())
+                absorbed += 1
+            except Exception:
+                pass
+    if absorbed:
+        logger.info("Absorbed %d legacy per-file cache entries", absorbed)
+        _flush_nom_cache()
+
+    return _nom_cache
+
+
+def _flush_nom_cache() -> None:
+    """Write the in-memory cache to disk atomically."""
+    tmp = _NOMINATIM_CACHE_FILE.with_suffix(".tmp")
+    try:
+        tmp.write_text(json.dumps(_nom_cache))
+        tmp.replace(_NOMINATIM_CACHE_FILE)
+    except Exception as e:
+        logger.warning("Nominatim cache flush error: %s", e)
+        try:
+            tmp.unlink(missing_ok=True)
+        except Exception:
+            pass
 
 # ── CLIP module-level cache ────────────────────────────────────────────────────
 # Loaded once on first call to retrieve_similar_images; reused for every
@@ -85,44 +145,28 @@ def _load_clip_resources() -> None:
     logger.info("CLIP and guidebook loaded.")
 
 
-def _cache_path(candidate: str, top_k: int) -> Path:
-    digest = hashlib.sha256(f"{candidate}:{top_k}".encode()).hexdigest()
-    return _NOMINATIM_CACHE_DIR / f"{digest}.json"
+def _cache_key(candidate: str, top_k: int) -> str:
+    return hashlib.sha256(f"{candidate}:{top_k}".encode()).hexdigest()
 
 
 def _cache_get(candidate: str, top_k: int) -> list[dict] | None:
-    try:
-        return json.loads(_cache_path(candidate, top_k).read_text())
-    except FileNotFoundError:
-        return None
-    except Exception as e:
-        logger.warning("Nominatim cache read error: %s", e)
-        return None
+    cache = _ensure_nom_cache()
+    key = _cache_key(candidate, top_k)
+    return cache.get(key)  # None if missing; [] if cached-empty
 
 
 def _cache_set(candidate: str, top_k: int, results: list[dict]) -> None:
-    path = _cache_path(candidate, top_k)
-    tmp = path.with_suffix(".tmp")
-    try:
-        _NOMINATIM_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        tmp.write_text(json.dumps(results))
-        tmp.replace(path)  # atomic even on NFS
-    except Exception as e:
-        logger.warning("Nominatim cache write error: %s", e)
-        try:
-            tmp.unlink(missing_ok=True)
-        except Exception:
-            pass
+    cache = _ensure_nom_cache()
+    cache[_cache_key(candidate, top_k)] = results
+    _flush_nom_cache()
 
 
 def _nominatim_get(url: str, params: dict, headers: dict) -> requests.Response:
     """Make a single Nominatim GET request respecting the cross-process rate limit.
 
-    Nominatim policy (https://operations.osmfoundation.org/policies/nominatim/):
-      - Absolute maximum: 1 request per second.
-      - Regularly-scheduled / long-running scripts: 4 requests per minute.
-    We enforce _NOMINATIM_MIN_INTERVAL (15 s) between requests across all
-    parallel shards by using a shared lock file + timestamp file.
+    Nominatim policy: max 1 request/second for batch/research use.
+    We enforce _NOMINATIM_MIN_INTERVAL across ALL parallel shards via a shared
+    lock file + timestamp file on NFS.
     """
     _NOMINATIM_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     lock = filelock.FileLock(str(_NOMINATIM_LOCK_PATH), timeout=300)
@@ -136,7 +180,6 @@ def _nominatim_get(url: str, params: dict, headers: dict) -> requests.Response:
         if wait > 0:
             logger.debug("Nominatim rate-limit: sleeping %.1f s", wait)
             time.sleep(wait)
-        # Record the slot before releasing the lock so the next process waits.
         _NOMINATIM_TS_PATH.write_text(str(time.time()))
 
     return requests.get(url, params=params, headers=headers, timeout=30)
@@ -203,6 +246,14 @@ def _parse_osm_candidates(query) -> list[str]:
             item = str(item)
         item = " ".join(item.split())
         if not item or item.lower() == "none":
+            continue
+        # Skip strings that cannot be place names:
+        #  • pure coordinate/bounding-box arrays, e.g. "[0.12, 0.01, 0.87, 0.34]"
+        #  • strings with no alphabetic characters at all
+        #  • very short strings (fewer than 3 alpha chars)
+        #  • strings longer than 200 chars (not a place name)
+        alpha_count = sum(1 for c in item if c.isalpha())
+        if alpha_count < 3 or len(item) > 200:
             continue
         normalized.append(item)
     return normalized
@@ -292,14 +343,20 @@ def search_place_with_retry(query: str, top_k: int = 3) -> list[dict] | None:
 
 
 def retrieve_similar_images(
-    input_image_path: str, k: int = 5, threshold: float = 30.0
+    input_image_path: str, k: int = 5, threshold: float = 100.0
 ) -> tuple[list[str], list[str], list[float]]:
     """Return (image_paths, text_clues, distances) for guidebook entries similar
     to *input_image_path*.
 
     The CLIP model and FAISS index are loaded once and cached for the lifetime
-    of the process.  *threshold* is a FAISS L2 distance cutoff; entries farther
-    than this are excluded.
+    of the process.  *threshold* is a FAISS L2² distance cutoff.
+
+    Calibration: CLIP ViT-B/32 features are stored unnormalized (L2 norm ~10–12),
+    so FAISS L2² values range from ~0 to ~200 between any two images.
+    L2² = ||a||²+||b||² − 2⟨a,b⟩ ≈ 200·(1 − cos θ) for norm-10 vectors.
+      threshold=100 → cos_sim > 0.50  (moderately similar — recommended)
+      threshold= 60 → cos_sim > 0.70  (fairly similar)
+      threshold= 30 → cos_sim > 0.85  (very similar — previous default, almost never met)
     """
     _load_clip_resources()
 
@@ -395,7 +452,7 @@ def parse_json(guess: str) -> dict | None:
 def build_guess_query(
     row: dict,
     *,
-    rag_threshold: float = 30.0,
+    rag_threshold: float = 100.0,
     include_reasoning: bool = True,
     include_osm: bool = True,
     include_rag: bool = True,

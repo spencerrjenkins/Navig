@@ -256,51 +256,54 @@ _LLAVA_VICUNA_PROMPT = (
 class LLaVA_vllm:
     """vLLM-accelerated LLaVA-NeXT base model for stages 4/5/6 (--use_vllm)."""
 
+    # LLaVA-1.6 tokenizes one image as up to 5 tiles × 576 tokens/tile = 2880 image tokens.
+    # Hard context limit is 4096; output is capped at 256 tokens.
+    # Text budget = 4096 - 2880 (image) - 256 (output) = 960 tokens ≈ 3840 characters.
+    _CONTEXT_LIMIT = 4096
+    _IMAGE_TOKEN_BUDGET = 2880  # worst-case LLaVA-NeXT with 5 tiles
+    _OUTPUT_TOKENS = 256
+    _MAX_TEXT_CHARS = (_CONTEXT_LIMIT - _IMAGE_TOKEN_BUDGET - _OUTPUT_TOKENS) * 4  # ~4 chars/token
+
     def __init__(self, model_path: str = "vlms/llava/llava-v1.6-vicuna-7b-hf"):
         from vllm import LLM, SamplingParams
         seed_everything(42)
-        # LLaVA's positional embeddings limit context to 4096 tokens (hard architectural limit)
-        # Prompt truncation (below) ensures queries stay under this limit
         self.llm = LLM(model=model_path, dtype="float16", max_model_len=4096)
-        self.sampling_params = SamplingParams(max_tokens=256, temperature=0)
-        self.max_input_tokens = 3840  # Conservative limit: 4096 - 256 output tokens
+        self.sampling_params = SamplingParams(max_tokens=self._OUTPUT_TOKENS, temperature=0)
 
     def _truncate_prompt(self, prompt: str) -> str:
-        """Truncate prompt to fit within max_input_tokens, preserving critical info.
+        """Truncate text prompt so that text + image tokens fit within the 4096-token limit.
 
-        Strategy: estimate tokens (~1.3 chars per token for English) and truncate
-        from the middle (RAG details) while preserving beginning (setup) and end (instruction).
+        Drops evidence sections in priority order (RAG → comment → OSM) while
+        preserving the opening instructions and closing answer-format request.
         """
-        estimated_tokens = len(prompt) / 3.0  # Rough estimate: ~1.3 tokens per char
-        if estimated_tokens <= self.max_input_tokens:
+        if len(prompt) <= self._MAX_TEXT_CHARS:
             return prompt
 
-        # Calculate how much to cut
-        char_limit = int(self.max_input_tokens * 3.0)
-        excess = len(prompt) - char_limit
+        excess_chars = len(prompt) - self._MAX_TEXT_CHARS
 
-        # Try to cut RAG/comment sections (middle parts) first
-        # Find markers and remove/truncate them
-        rag_marker = "### GUIDEBOOK KNOWLEDGE ###"
-        comment_marker = "### DETAILS REASONING ###"
-        osm_marker = "### MAP SEARCH ###"
-
+        # Drop middle sections first: RAG is least critical, then comment detail, then OSM
         prompt_truncated = prompt
-        for marker in [rag_marker, comment_marker, osm_marker]:
-            if marker in prompt_truncated and excess > 0:
-                start = prompt_truncated.find(marker)
-                end = prompt_truncated.find("\n", start + 100)  # Find end of that section
-                if end == -1:
-                    end = len(prompt_truncated)
-                section = prompt_truncated[start:end]
-                cut_amt = min(excess, len(section) // 2)
-                prompt_truncated = prompt_truncated[:start] + prompt_truncated[start+cut_amt:]
-                excess -= cut_amt
+        for marker in ["### GUIDEBOOK KNOWLEDGE ###", "### DETAILS REASONING ###", "### MAP SEARCH ###"]:
+            if excess_chars <= 0:
+                break
+            if marker not in prompt_truncated:
+                continue
+            start = prompt_truncated.find(marker)
+            # Find the start of the *next* section (next ###) or end of string
+            next_section = prompt_truncated.find("###", start + len(marker))
+            end = next_section if next_section != -1 else len(prompt_truncated)
+            section_len = end - start
+            cut = min(excess_chars, section_len)
+            prompt_truncated = prompt_truncated[:start] + prompt_truncated[start + cut:]
+            excess_chars -= cut
 
-        # If still too long, brutally truncate from end (before outro)
-        if excess > 0 and "Using the provided information" in prompt_truncated:
-            outro_start = prompt_truncated.find("Using the provided information")
-            prompt_truncated = prompt_truncated[:outro_start-excess] + prompt_truncated[outro_start:]
+        # Last resort: trim from just before the closing answer instruction
+        if excess_chars > 0:
+            outro_marker = "Using the provided information"
+            if outro_marker in prompt_truncated:
+                outro_start = prompt_truncated.find(outro_marker)
+                trim_end = max(0, outro_start - excess_chars)
+                prompt_truncated = prompt_truncated[:trim_end] + prompt_truncated[outro_start:]
 
         return prompt_truncated
 
@@ -563,25 +566,26 @@ class FalconVLM(_BatchMixin):
             p = image_path[0] if isinstance(image_path, list) else image_path
             img = PILImage.open(p).convert("RGB")
 
-        prompt = f"[INST] <image>\n{query} [/INST]" if img else f"[INST] {query} [/INST]"
+        # Falcon-11B-VLM uses the Falcon instruct conversation format, NOT the
+        # Mistral [INST]/[/INST] template. Wrong template causes bounding-box
+        # echo outputs and repeated template tokens instead of natural language.
+        prompt = f"User: <image>\n{query}\nFalcon:" if img else f"User: {query}\nFalcon:"
         device = next(self.model.parameters()).device
         inputs = self.processor(text=prompt, images=img, return_tensors="pt").to(device)
 
-        # Use temperature > 0 for generation diversity; do_sample=True to allow variation
-        # min_new_tokens ensures the model generates at least some output (avoids premature EOS)
+        # Greedy decoding: deterministic outputs ensure OSM cache keys are stable
+        # across re-runs (sampling caused unique keys every run → always cache misses).
         out = self.model.generate(
             **inputs,
             max_new_tokens=512,
             min_new_tokens=10,
-            temperature=0.7,
-            do_sample=True,
-            top_p=0.9,
+            do_sample=False,
         )
         new_tokens = out[:, inputs["input_ids"].shape[1]:]
         response = self.processor.decode(new_tokens[0], skip_special_tokens=True)
 
         if not response.strip():
-            logger.warning("Falcon inference returned empty response; attempting greedy decoding")
+            logger.warning("Falcon inference returned empty response; retrying with beam search")
             out = self.model.generate(
                 **inputs,
                 max_new_tokens=512,

@@ -100,26 +100,7 @@ PENALTY_KM  = 10_000.0
 
 # ── Geo utilities ─────────────────────────────────────────────────────────────
 
-def lat_to_continent(lat, lon):
-    if lat > 66.5:
-        return "Arctic"
-    if lat < -60:
-        return "Antarctica"
-    if -35 < lat < 37 and -20 < lon < 55:
-        return "Africa"
-    if lat > 35 and -30 < lon < 60:
-        return "Europe"
-    if lat > 0 and 60 < lon < 180:
-        return "Asia (N)"
-    if -10 < lat < 35 and 60 < lon < 180:
-        return "Asia (S/SE)"
-    if -55 < lat < -10 and 110 < lon < 180:
-        return "Oceania"
-    if 15 < lat < 75 and -170 < lon < -50:
-        return "N. America"
-    if -60 < lat < 15 and -90 < lon < -30:
-        return "S. America"
-    return "Other"
+from geo_utils import lat_to_continent  # noqa: E402  (after sys.path insert)
 
 
 # ── Data loading ──────────────────────────────────────────────────────────────
@@ -155,19 +136,19 @@ def get_dist(row: dict) -> tuple[float, bool]:
 
 def compute_stats(rows: dict) -> dict:
     dist_fail_pairs = [get_dist(r) for r in rows.values()]
-    dists = [d for d, _ in dist_fail_pairs]
     fails = sum(1 for _, f in dist_fail_pairs if f)
     success_dists = [d for d, f in dist_fail_pairs if not f]
-    n = len(dists)
-    gs = float(np.mean([geoscore(d) for d in dists]))
-    gs_excl = float(np.mean([geoscore(d) for d in success_dists])) if success_dists else float("nan")
-    accs = [sum(d <= t for d in dists) / n for t in THRESHOLDS]
+    n_total = len(dist_fail_pairs)
+    n = len(success_dists)
+    gs = float(np.mean([geoscore(d) for d in success_dists])) if success_dists else 0.0
+    accs = ([sum(d <= t for d in success_dists) / n for t in THRESHOLDS]
+            if n else [0.0] * len(THRESHOLDS))
     return {
-        "geoscore": gs, "accs": accs, "dists": dists, "n": n,
-        "fails": fails, "success_dists": success_dists, "gs_excl": gs_excl,
-        "p25": float(np.percentile(dists, 25)),
-        "p50": float(np.percentile(dists, 50)),
-        "p75": float(np.percentile(dists, 75)),
+        "geoscore": gs, "accs": accs, "dists": success_dists, "n": n, "n_total": n_total,
+        "fails": fails, "success_dists": success_dists, "gs_excl": gs,
+        "p25": float(np.percentile(success_dists, 25)) if success_dists else float("nan"),
+        "p50": float(np.percentile(success_dists, 50)) if success_dists else float("nan"),
+        "p75": float(np.percentile(success_dists, 75)) if success_dists else float("nan"),
     }
 
 
@@ -175,7 +156,9 @@ def compute_evidence_deltas(rows: dict) -> dict:
     ev_types = ["reasoning", "osm", "rag", "comment"]
     buckets = {ev: {"present": [], "absent": []} for ev in ev_types}
     for row in rows.values():
-        d, _ = get_dist(row)
+        d, fail = get_dist(row)
+        if fail:
+            continue
         usage = row.get("usage", {})
         for ev in ev_types:
             if usage.get(ev, 0):
@@ -197,7 +180,9 @@ def compute_evidence_deltas(rows: dict) -> dict:
 def compute_geographic(rows: dict) -> dict:
     geo = defaultdict(list)
     for row in rows.values():
-        d, _ = get_dist(row)
+        d, fail = get_dist(row)
+        if fail:
+            continue
         cont = lat_to_continent(float(row["LAT"]), float(row["LON"]))
         geo[cont].append(d)
     return {cont: float(np.mean([geoscore(d) for d in dists]))
@@ -250,8 +235,12 @@ def compute_crop_stats(rows: dict) -> dict:
     """Fraction of images where each GroundingDINO crop category was detected."""
     cats = ["road sign", "house", "building sign"]
     counts = {cat: 0 for cat in cats}
-    n = len(rows)
+    n = 0
     for row in rows.values():
+        _, fail = get_dist(row)
+        if fail:
+            continue
+        n += 1
         crop = row.get("crop") or {}
         for cat in cats:
             if crop.get(cat):
@@ -308,7 +297,7 @@ def fig1_geoscore(models: list[dict], output_dir: Path) -> None:
         mpatches.Patch(facecolor="white", edgecolor="black", hatch="///", label="With NAVIG SFT"),
         mpatches.Patch(facecolor="white", edgecolor="black", label="Base model"),
     ]
-    ax.legend(handles=legend_handles, loc="upper right", fontsize=9)
+    ax.legend(handles=legend_handles, loc="upper left", fontsize=9)
 
     fig.tight_layout()
     out = output_dir / "fig1_geoscore.pdf"
@@ -390,10 +379,7 @@ def fig3_distribution(models: list[dict], output_dir: Path) -> None:
     ax.set_xticklabels(labels, fontsize=7.5, rotation=20, ha="right")
     ax.set_ylabel("Distance to ground truth (km, log scale)")
     ax.set_ylim(0.05, 25000)
-    ax.axhline(PENALTY_KM, color="red", linewidth=0.8, linestyle="--", alpha=0.6)
-    ax.text(len(available) - 0.5, PENALTY_KM * 1.2, "parse-fail\npenalty",
-            fontsize=6.5, color="red", ha="right", va="bottom")
-    ax.set_title("(a) Full distribution (incl. failures)")
+    ax.set_title("(a) Full distribution (parse failures excluded)")
 
     ax2 = axes[1]
     x = np.arange(len(available))
@@ -441,7 +427,7 @@ def fig4_evidence(models: list[dict], output_dir: Path) -> None:
     bar_w   = group_w / n_m
     x       = np.arange(n_ev)
 
-    fig, ax = plt.subplots(figsize=(7, 3.6))
+    fig, ax = plt.subplots(figsize=(10.5, 3.6))
 
     for j, m in enumerate(available):
         color   = _model_color(m)
@@ -463,7 +449,7 @@ def fig4_evidence(models: list[dict], output_dir: Path) -> None:
     ax.set_xticklabels([ev_display[e] for e in ev_keys], fontsize=8.5)
     ax.set_ylabel("ΔGeoScore (present − absent)")
     ax.set_xlabel("Evidence component")
-    ax.legend(loc="upper right", ncol=2, framealpha=0.9)
+    ax.legend(loc="upper left", bbox_to_anchor=(1.02, 1), ncol=1, framealpha=0.9, fontsize=8.5)
     ax.axhspan(-50, 0,   alpha=0.04, color="red",   zorder=0)
     ax.axhspan(0,   200, alpha=0.04, color="green",  zorder=0)
 
@@ -596,17 +582,17 @@ def fig7_difficulty(models: list[dict], output_dir: Path) -> None:
     x            = np.arange(n_b)
     bar_w        = 0.8 / n_m
 
-    fig, axes = plt.subplots(1, len(THR_SHOW), figsize=(8, 3.5), layout="constrained",
+    fig, axes = plt.subplots(1, len(THR_SHOW), figsize=(8, 4.8), layout="constrained",
                              sharey=True, gridspec_kw={"wspace": 0.15})
 
     for ax, thr in zip(axes, THR_SHOW):
         for j, m in enumerate(available):
             color = _model_color(m)
-            accs = [
-                np.mean([get_dist(m["rows"][id_])[0] <= thr
-                         for id_ in buckets[bk] if id_ in m["rows"]]) * 100
-                for bk in bucket_keys
-            ]
+            accs = []
+            for bk in bucket_keys:
+                vals = [d for id_ in buckets[bk] if id_ in m["rows"]
+                        for d, f in [get_dist(m["rows"][id_])] if not f]
+                accs.append(np.mean([d <= thr for d in vals]) * 100 if vals else 0.0)
             offsets = x + (j - (n_m - 1) / 2) * bar_w
             ax.bar(offsets, accs, bar_w * 0.9, color=color, alpha=0.82, zorder=3,
                    label=m["label"].replace("\n", " "))
@@ -617,7 +603,9 @@ def fig7_difficulty(models: list[dict], output_dir: Path) -> None:
         ax.set_ylim(0, 95)
 
     axes[0].set_ylabel("Accuracy (%)")
-    axes[-1].legend(ncol=1, fontsize=7, loc="upper right", framealpha=0.9)
+    handles, labels = axes[-1].get_legend_handles_labels()
+    fig.legend(handles, labels, ncol=3, fontsize=7, framealpha=0.9,
+               loc="lower center", bbox_to_anchor=(0.5, 0.0))
     fig.suptitle("Accuracy by image difficulty", fontsize=10)
 
     out = output_dir / "fig7_difficulty.pdf"
@@ -644,10 +632,15 @@ def fig8_agreement(models: list[dict], output_dir: Path) -> None:
             common = set(available[i]["rows"].keys()) & set(available[j]["rows"].keys())
             if not common:
                 continue
+            valid_ids = [id_ for id_ in common
+                         if not get_dist(available[i]["rows"][id_])[1]
+                         and not get_dist(available[j]["rows"][id_])[1]]
+            if not valid_ids:
+                continue
             joint = np.mean([
                 get_dist(available[i]["rows"][id_])[0] <= T and
                 get_dist(available[j]["rows"][id_])[0] <= T
-                for id_ in common
+                for id_ in valid_ids
             ]) * 100
             matrix[i, j] = joint
 
@@ -701,7 +694,7 @@ def fig9_failure_modes(models: list[dict], output_dir: Path) -> None:
     bottoms = np.zeros(len(available))
 
     for key, color, label in zip(cat_keys, cat_colors, cat_labels):
-        fracs = [m["fail_modes"][key] / m["stats"]["n"] * 100 for m in available]
+        fracs = [m["fail_modes"][key] / m["stats"]["n_total"] * 100 for m in available]
         ax.bar(x, fracs, bottom=bottoms, color=color, label=label, zorder=3)
         for xi, (frac, bot) in enumerate(zip(fracs, bottoms)):
             if frac >= 5:
@@ -714,10 +707,10 @@ def fig9_failure_modes(models: list[dict], output_dir: Path) -> None:
     ax.set_xticks(x)
     ax.set_xticklabels([m["label"].replace("\n", " ") for m in available],
                        rotation=20, ha="right", fontsize=8)
-    ax.set_ylim(0, 102)
+    ax.set_ylim(0, 115)
     ax.set_ylabel("% of images")
     ax.yaxis.set_major_formatter(ticker.PercentFormatter(xmax=100, decimals=0))
-    ax.legend(loc="upper right", ncol=2, fontsize=7, framealpha=0.9)
+    ax.legend(loc="upper center", ncol=3, fontsize=7, framealpha=0.9)
     ax.set_title("Prediction outcome decomposition")
 
     fig.tight_layout()
@@ -963,9 +956,10 @@ def fig15_error_percentiles(models: list[dict], output_dir: Path) -> None:
     ax.set_yscale("log")
     ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda v, _: f"{v:,.0f}"))
     ax.set_title("Prediction error percentiles per model", fontsize=11, fontweight="bold")
-    ax.legend(title="Percentile", fontsize=8, ncol=5, loc="upper left")
+    ax.legend(title="Percentile", fontsize=8, ncol=5, loc="lower center",
+              bbox_to_anchor=(0.5, -0.22))
 
-    fig.tight_layout()
+    fig.tight_layout(rect=[0, 0.12, 1, 1])
     out = output_dir / "fig15_error_percentiles.pdf"
     fig.savefig(out, dpi=150)
     plt.close(fig)
@@ -1092,11 +1086,11 @@ def fig18_error_vs_latitude(models: list[dict], output_dir: Path) -> None:
     band_lbls  = [f"{lo}° to {hi}°" for lo, hi in bands]
     markers    = MARKERS
 
-    fig, ax = plt.subplots(figsize=(7, 3.8))
+    fig, ax = plt.subplots(figsize=(10, 3.8))
     for m, mk in zip(available, markers):
         band_medians = []
         for lo, hi in bands:
-            ds = [p["dist"] for p in m["preds"] if lo <= p["true_lat"] < hi]
+            ds = [p["dist"] for p in m["preds"] if not p["fail"] and lo <= p["true_lat"] < hi]
             band_medians.append(float(np.median(ds)) if ds else float("nan"))
         ax.plot(range(len(bands)), band_medians,
                 marker=mk, color=_model_color(m), linewidth=1.8, markersize=6,
@@ -1108,7 +1102,8 @@ def fig18_error_vs_latitude(models: list[dict], output_dir: Path) -> None:
     ax.set_yscale("log")
     ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda v, _: f"{v:,.0f}"))
     ax.set_title("Median error by ground-truth latitude band", fontsize=10, fontweight="bold")
-    ax.legend(fontsize=7.5, ncol=2, loc="upper right", framealpha=0.9)
+    ax.legend(fontsize=7.5, ncol=1, loc="upper left", bbox_to_anchor=(1.02, 1),
+              framealpha=0.9)
 
     fig.tight_layout()
     out = output_dir / "fig18_error_vs_latitude.pdf"
@@ -1141,7 +1136,7 @@ def fig19_evidence_usage(models: list[dict], output_dir: Path) -> None:
 
     fig, ax = plt.subplots(figsize=(6.5, 3.8))
     for j, m in enumerate(available):
-        rates   = [float(np.mean([p["usage"].get(ev, 0) for p in m["preds"]])) * 100
+        rates   = [float(np.mean([p["usage"].get(ev, 0) for p in m["preds"] if not p["fail"]])) * 100
                    for ev in ev_keys]
         offsets = x + (j - (n_m - 1) / 2) * bar_w
         ax.bar(offsets, rates, bar_w * 0.92,
@@ -1175,10 +1170,12 @@ def fig20_evidence_count_accuracy(models: list[dict], output_dir: Path) -> None:
         print("  fig20_evidence_count_accuracy.pdf: no data, skipping")
         return
 
-    fig, ax = plt.subplots(figsize=(6, 3.8))
+    fig, ax = plt.subplots(figsize=(9, 3.8))
     for m, mk in zip(available, MARKERS):
         buckets: dict[int, list[float]] = defaultdict(list)
         for p in m["preds"]:
+            if p["fail"]:
+                continue
             buckets[p["usage_count"]].append(geoscore(p["dist"]))
         counts = sorted(buckets)
         means  = [float(np.mean(buckets[c])) for c in counts]
@@ -1195,7 +1192,8 @@ def fig20_evidence_count_accuracy(models: list[dict], output_dir: Path) -> None:
     ax.set_ylabel("Mean GeoScore", fontsize=9)
     ax.set_xticks([0, 1, 2, 3, 4])
     ax.set_title("GeoScore vs. evidence count", fontsize=10, fontweight="bold")
-    ax.legend(fontsize=7, ncol=2, loc="lower right", framealpha=0.9)
+    ax.legend(fontsize=7, ncol=1, loc="upper left", bbox_to_anchor=(1.02, 1),
+              framealpha=0.9)
 
     fig.tight_layout()
     out = output_dir / "fig20_evidence_count_accuracy.pdf"
@@ -1221,8 +1219,8 @@ def fig21_osm_impact(models: list[dict], output_dir: Path) -> None:
     gs_miss  = []
     n_hit    = []
     for m in available:
-        hit  = [geoscore(p["dist"]) for p in m["preds"] if p["usage"].get("osm", 0)]
-        miss = [geoscore(p["dist"]) for p in m["preds"] if not p["usage"].get("osm", 0)]
+        hit  = [geoscore(p["dist"]) for p in m["preds"] if not p["fail"] and p["usage"].get("osm", 0)]
+        miss = [geoscore(p["dist"]) for p in m["preds"] if not p["fail"] and not p["usage"].get("osm", 0)]
         gs_hit.append(float(np.mean(hit))  if hit  else float("nan"))
         gs_miss.append(float(np.mean(miss)) if miss else float("nan"))
         n_hit.append(len(hit))
@@ -1241,7 +1239,7 @@ def fig21_osm_impact(models: list[dict], output_dir: Path) -> None:
     ax.set_xticklabels(labels, rotation=25, ha="right", fontsize=8.5)
     ax.set_ylabel("Mean GeoScore", fontsize=10)
     ax.set_title("GeoScore: OSM geocoding used vs. not", fontsize=11, fontweight="bold")
-    ax.legend(fontsize=9, loc="upper right")
+    ax.legend(fontsize=9, loc="upper left")
 
     fig.tight_layout()
     out = output_dir / "fig21_osm_impact.pdf"
@@ -1338,8 +1336,8 @@ def fig23_prediction_density(models: list[dict], output_dir: Path) -> None:
     for idx, m in enumerate(available):
         row, col = divmod(idx, ncols)
         ax = axes[row + 1, col]
-        pred_lons = [p["pred_lon"] for p in m["preds"] if not np.isnan(p["pred_lon"])]
-        pred_lats = [p["pred_lat"] for p in m["preds"] if not np.isnan(p["pred_lat"])]
+        pred_lons = [p["pred_lon"] for p in m["preds"] if not p["fail"]]
+        pred_lats = [p["pred_lat"] for p in m["preds"] if not p["fail"]]
         ax.scatter(pred_lons, pred_lats, s=0.8, alpha=0.25,
                    color=_model_color(m), rasterized=True)
         ax.set_xlim(-180, 180); ax.set_ylim(-90, 90)
@@ -1438,6 +1436,8 @@ def fig25_top_countries(models: list[dict], output_dir: Path) -> None:
 
         counts: dict[str, int] = defaultdict(int)
         for p in m["preds"]:
+            if p["fail"]:
+                continue
             c = (p["country_pred"] or "Unknown").strip()
             if c:
                 counts[c] += 1
@@ -1461,6 +1461,157 @@ def fig25_top_countries(models: list[dict], output_dir: Path) -> None:
                  fontsize=11, fontweight="bold")
 
     out = output_dir / "fig25_top_countries.pdf"
+    fig.savefig(out, dpi=150)
+    plt.close(fig)
+    print(f"  Saved {out}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STAGE-WISE COMPARISON FIGURES  (predict progression from stage 1 to 6)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _load_stage_results(base_dir: Path, key: str, stage: int) -> dict[str, dict] | None:
+    """Load results for a specific stage (1–6)."""
+    shard_dir = base_dir / f"cmp_shard_{key}_merged"
+    if stage == 6:
+        path = shard_dir / f"results_s6_{key}.jsonl"
+    else:
+        path = shard_dir / f"results_s{stage}.jsonl"
+    return load_results(path)
+
+
+def _compute_stage_stats(rows: dict[str, dict], stage: int) -> dict | None:
+    """Compute distance/accuracy stats for a given stage's predictions."""
+    if not rows:
+        return None
+    dists = []
+    fails = 0
+    for row in rows.values():
+        try:
+            ans = row.get("answer") or {}
+            if not ans or "latitude" not in ans or "longitude" not in ans:
+                fails += 1
+                continue
+            lat = parse_coord(ans["latitude"])
+            lon = parse_coord(ans["longitude"])
+            true_lat = float(row["LAT"])
+            true_lon = float(row["LON"])
+            dist = haversine_distance([lat, lon], [true_lat, true_lon])
+            dists.append(dist)
+        except Exception:
+            fails += 1
+    if not dists:
+        return None
+    gs = float(np.mean([geoscore(d) for d in dists]))
+    return {
+        "stage": stage, "geoscore": gs, "dists": dists, "median": float(np.median(dists)),
+        "p25": float(np.percentile(dists, 25)), "p75": float(np.percentile(dists, 75)),
+    }
+
+
+# ── Figure 26: Error progression across pipeline stages ──────────────────────────
+
+def fig26_stage_progression(models: list[dict], base_dir: Path, output_dir: Path) -> None:
+    """Line chart of median error & GeoScore evolution from stage 1 to 6.
+    Shows how incremental pipeline stages reduce prediction error and increase accuracy."""
+    available = [m for m in models if m["stats"] is not None]
+    if not available:
+        print("  fig26_stage_progression.pdf: no data, skipping")
+        return
+
+    fig, axes = plt.subplots(1, 2, figsize=(11, 5.2), layout="constrained")
+
+    for m, mk in zip(available, MARKERS):
+        key = m["key"]
+        stages_data = []
+        for s in range(1, 7):
+            stage_rows = _load_stage_results(base_dir, key, s)
+            stats = _compute_stage_stats(stage_rows, s)
+            if stats:
+                stages_data.append(stats)
+        if not stages_data:
+            continue
+
+        stages = [s["stage"] for s in stages_data]
+        medians = [s["median"] for s in stages_data]
+        geoscores = [s["geoscore"] for s in stages_data]
+
+        color = _model_color(m)
+        axes[0].plot(stages, medians, marker=mk, color=color, linewidth=2,
+                    markersize=7, label=m["label"].replace("\n", " "), zorder=3)
+        axes[1].plot(stages, geoscores, marker=mk, color=color, linewidth=2,
+                    markersize=7, label=m["label"].replace("\n", " "), zorder=3)
+
+    axes[0].set_xlabel("Pipeline stage", fontsize=10)
+    axes[0].set_ylabel("Median error (km)", fontsize=10)
+    axes[0].set_yscale("log")
+    axes[0].yaxis.set_major_formatter(ticker.FuncFormatter(lambda v, _: f"{v:,.0f}"))
+    axes[0].set_xticks(range(1, 7))
+    axes[0].set_title("(a) Median error progression", fontsize=10, fontweight="bold")
+    axes[0].grid(True, alpha=0.3, linestyle="--", zorder=1)
+
+    axes[1].set_xlabel("Pipeline stage", fontsize=10)
+    axes[1].set_ylabel("GeoScore", fontsize=10)
+    axes[1].set_xticks(range(1, 7))
+    axes[1].set_title("(b) GeoScore progression", fontsize=10, fontweight="bold")
+    axes[1].grid(True, alpha=0.3, linestyle="--", zorder=1)
+
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, fontsize=8, ncol=5, loc="lower center",
+               bbox_to_anchor=(0.5, 0.0))
+
+    fig.suptitle("Pipeline stage progression: error and accuracy evolution", fontsize=12, fontweight="bold")
+    out = output_dir / "fig26_stage_progression.pdf"
+    fig.savefig(out, dpi=150)
+    plt.close(fig)
+    print(f"  Saved {out}")
+
+
+# ── Figure 27: Stage-wise improvement breakdown ───────────────────────────────
+
+def fig27_stage_improvement(models: list[dict], base_dir: Path, output_dir: Path) -> None:
+    """Grouped bar chart showing cumulative accuracy gain at each stage threshold."""
+    available = [m for m in models if m["stats"] is not None]
+    if not available:
+        print("  fig27_stage_improvement.pdf: no data, skipping")
+        return
+
+    thresholds = [25, 200, 750]
+    stages = list(range(1, 7))
+    n_m = len(available)
+    n_t = len(thresholds)
+
+    fig, axes = plt.subplots(1, n_t, figsize=(12, 3.8), layout="constrained", sharey=True)
+
+    for ax, thr in zip(axes, thresholds):
+        stage_accs = [[] for _ in range(6)]
+        for m in available:
+            key = m["key"]
+            for s in range(1, 7):
+                stage_rows = _load_stage_results(base_dir, key, s)
+                if stage_rows:
+                    dists = [d for d, f in (get_dist(r) for r in stage_rows.values()) if not f]
+                    acc = sum(d <= thr for d in dists) / len(dists) * 100 if dists else 0.0
+                    stage_accs[s - 1].append(acc)
+
+        x = np.arange(len(stages))
+        bar_w = 0.75 / n_m
+        for j, m in enumerate(available):
+            accs = [stage_accs[s - 1][j] if j < len(stage_accs[s - 1]) else 0 for s in stages]
+            offsets = x + (j - (n_m - 1) / 2) * bar_w
+            ax.bar(offsets, accs, bar_w * 0.92, color=_model_color(m), alpha=0.82,
+                  label=m["label"].replace("\n", " ") if thr == thresholds[0] else "")
+
+        ax.set_xticks(x)
+        ax.set_xticklabels([f"S{s}" for s in stages], fontsize=9)
+        ax.set_title(f"@{thr} km", fontsize=9, fontweight="bold")
+        ax.yaxis.set_major_formatter(ticker.PercentFormatter(xmax=100, decimals=0))
+
+    axes[0].set_ylabel("Accuracy (%)", fontsize=10)
+    axes[-1].legend(fontsize=7.5, loc="lower right", ncol=1)
+    fig.suptitle("Accuracy by stage and distance threshold", fontsize=11, fontweight="bold")
+
+    out = output_dir / "fig27_stage_improvement.pdf"
     fig.savefig(out, dpi=150)
     plt.close(fig)
     print(f"  Saved {out}")
@@ -1543,6 +1694,10 @@ def main():
     fig23_prediction_density(models, output_dir)
     fig24_sft_gain_by_continent(models, output_dir)
     fig25_top_countries(models, output_dir)
+
+    # ── Stage-wise progression (fig26–fig27) ──────────────────────────────────
+    fig26_stage_progression(models, base_dir, output_dir)
+    fig27_stage_improvement(models, base_dir, output_dir)
 
     print("Done.")
 
