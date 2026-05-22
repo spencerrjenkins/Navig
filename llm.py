@@ -259,16 +259,58 @@ class LLaVA_vllm:
     def __init__(self, model_path: str = "vlms/llava/llava-v1.6-vicuna-7b-hf"):
         from vllm import LLM, SamplingParams
         seed_everything(42)
-        # Increased from 4096 to 5120 to accommodate stage 6 queries which can reach ~4200 tokens
-        # (reasoning + RAG + comments + OSM results)
-        self.llm = LLM(model=model_path, dtype="float16", max_model_len=5120)
+        # LLaVA's positional embeddings limit context to 4096 tokens (hard architectural limit)
+        # Prompt truncation (below) ensures queries stay under this limit
+        self.llm = LLM(model=model_path, dtype="float16", max_model_len=4096)
         self.sampling_params = SamplingParams(max_tokens=256, temperature=0)
+        self.max_input_tokens = 3840  # Conservative limit: 4096 - 256 output tokens
+
+    def _truncate_prompt(self, prompt: str) -> str:
+        """Truncate prompt to fit within max_input_tokens, preserving critical info.
+
+        Strategy: estimate tokens (~1.3 chars per token for English) and truncate
+        from the middle (RAG details) while preserving beginning (setup) and end (instruction).
+        """
+        estimated_tokens = len(prompt) / 3.0  # Rough estimate: ~1.3 tokens per char
+        if estimated_tokens <= self.max_input_tokens:
+            return prompt
+
+        # Calculate how much to cut
+        char_limit = int(self.max_input_tokens * 3.0)
+        excess = len(prompt) - char_limit
+
+        # Try to cut RAG/comment sections (middle parts) first
+        # Find markers and remove/truncate them
+        rag_marker = "### GUIDEBOOK KNOWLEDGE ###"
+        comment_marker = "### DETAILS REASONING ###"
+        osm_marker = "### MAP SEARCH ###"
+
+        prompt_truncated = prompt
+        for marker in [rag_marker, comment_marker, osm_marker]:
+            if marker in prompt_truncated and excess > 0:
+                start = prompt_truncated.find(marker)
+                end = prompt_truncated.find("\n", start + 100)  # Find end of that section
+                if end == -1:
+                    end = len(prompt_truncated)
+                section = prompt_truncated[start:end]
+                cut_amt = min(excess, len(section) // 2)
+                prompt_truncated = prompt_truncated[:start] + prompt_truncated[start+cut_amt:]
+                excess -= cut_amt
+
+        # If still too long, brutally truncate from end (before outro)
+        if excess > 0 and "Using the provided information" in prompt_truncated:
+            outro_start = prompt_truncated.find("Using the provided information")
+            prompt_truncated = prompt_truncated[:outro_start-excess] + prompt_truncated[outro_start:]
+
+        return prompt_truncated
 
     def batch_inference(self, items: list[tuple[str, "str | None"]]) -> list[str]:
         from PIL import Image as PILImage
         requests = []
         for query, image_path in items:
             prompt = _LLAVA_VICUNA_PROMPT.format(query=query)
+            # Truncate to fit within vLLM's hard 4096 token limit
+            prompt = self._truncate_prompt(prompt)
             if image_path:
                 if isinstance(image_path, list):
                     image_path = image_path[0]
