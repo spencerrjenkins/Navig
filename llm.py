@@ -212,6 +212,10 @@ class CPM_sft(_BatchMixin):
         model_path: str = "vlms/cpm/MiniCPM-V-2_6",
         ckpt_dir: str = "vlms/cpm/checkpoint-534",
     ):
+        import os
+        import logging
+        logger = logging.getLogger(__name__)
+
         self.model_type = "minicpm-v-v2_6-chat"
         self.template_type = get_default_template_type(self.model_type)
         seed_everything(42)
@@ -221,7 +225,16 @@ class CPM_sft(_BatchMixin):
         )
         self.model.generation_config.max_new_tokens = 256
         self.template = get_template(self.template_type, self.tokenizer)
-        self.model = Swift.from_pretrained(self.model, ckpt_dir, inference_mode=True)
+
+        # Resolve checkpoint directory to absolute path for reliable loading
+        ckpt_dir_abs = os.path.abspath(ckpt_dir)
+        logger.info(f"Loading CPM-V SFT adapter from: {ckpt_dir_abs}")
+        if not os.path.exists(ckpt_dir_abs):
+            logger.warning(f"Adapter directory not found at {ckpt_dir_abs}. Using base model without SFT.")
+            return
+
+        self.model = Swift.from_pretrained(self.model, ckpt_dir_abs, inference_mode=True)
+        logger.info(f"Successfully loaded SFT adapter for MiniCPM-V-2.6")
 
     def base_inference(self, query: str, image_path: str) -> str:
         response, _ = inference(
@@ -246,7 +259,9 @@ class LLaVA_vllm:
     def __init__(self, model_path: str = "vlms/llava/llava-v1.6-vicuna-7b-hf"):
         from vllm import LLM, SamplingParams
         seed_everything(42)
-        self.llm = LLM(model=model_path, dtype="float16", max_model_len=4096)
+        # Increased from 4096 to 5120 to accommodate stage 6 queries which can reach ~4200 tokens
+        # (reasoning + RAG + comments + OSM results)
+        self.llm = LLM(model=model_path, dtype="float16", max_model_len=5120)
         self.sampling_params = SamplingParams(max_tokens=256, temperature=0)
 
     def batch_inference(self, items: list[tuple[str, "str | None"]]) -> list[str]:
@@ -498,6 +513,8 @@ class FalconVLM(_BatchMixin):
 
     def base_inference(self, query: str, image_path=None) -> str:
         from PIL import Image as PILImage
+        import logging
+        logger = logging.getLogger(__name__)
 
         img = None
         if image_path:
@@ -507,9 +524,33 @@ class FalconVLM(_BatchMixin):
         prompt = f"[INST] <image>\n{query} [/INST]" if img else f"[INST] {query} [/INST]"
         device = next(self.model.parameters()).device
         inputs = self.processor(text=prompt, images=img, return_tensors="pt").to(device)
-        out = self.model.generate(**inputs, max_new_tokens=256, do_sample=False)
+
+        # Use temperature > 0 for generation diversity; do_sample=True to allow variation
+        # min_new_tokens ensures the model generates at least some output (avoids premature EOS)
+        out = self.model.generate(
+            **inputs,
+            max_new_tokens=512,
+            min_new_tokens=10,
+            temperature=0.7,
+            do_sample=True,
+            top_p=0.9,
+        )
         new_tokens = out[:, inputs["input_ids"].shape[1]:]
-        return self.processor.decode(new_tokens[0], skip_special_tokens=True)
+        response = self.processor.decode(new_tokens[0], skip_special_tokens=True)
+
+        if not response.strip():
+            logger.warning("Falcon inference returned empty response; attempting greedy decoding")
+            out = self.model.generate(
+                **inputs,
+                max_new_tokens=512,
+                min_new_tokens=5,
+                do_sample=False,
+                num_beams=2,
+            )
+            new_tokens = out[:, inputs["input_ids"].shape[1]:]
+            response = self.processor.decode(new_tokens[0], skip_special_tokens=True)
+
+        return response
 
 
 # ── Shared model factory ───────────────────────────────────────────────────────
